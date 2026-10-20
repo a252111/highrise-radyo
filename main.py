@@ -66,28 +66,34 @@ def radio_loop():
 
 
 def indir(sorgu):
-    opts = {
-        "format": "bestaudio/best",
-        "outtmpl": "/tmp/%(id)s.%(ext)s",
-        "default_search": "ytsearch1",
-        "noplaylist": True,
-        "quiet": True,
-        "match_filter": yt_dlp.utils.match_filter_func("duration < 600"),
-        "postprocessors": [{"key": "FFmpegExtractAudio",
-                            "preferredcodec": "mp3",
-                            "preferredquality": "128"}],
-        "postprocessor_args": {"ffmpeg": ["-ar", "44100", "-ac", "2"]},
-    }
-    with yt_dlp.YoutubeDL(opts) as y:
-        info = y.extract_info(sorgu, download=True)
-        if "entries" in info:
-            info = info["entries"][0] if info["entries"] else None
-        if not info:
-            raise Exception("bulunamadi")
-        path = f"/tmp/{info['id']}.mp3"
-        if not os.path.exists(path):
-            raise Exception("indirilemedi")
-        return path, info["title"]
+    son_hata = None
+    for arama in ("scsearch1", "ytsearch1"):
+        opts = {
+            "format": "bestaudio/best",
+            "outtmpl": "/tmp/%(id)s.%(ext)s",
+            "default_search": arama,
+            "noplaylist": True,
+            "quiet": True,
+            "postprocessors": [{"key": "FFmpegExtractAudio",
+                                "preferredcodec": "mp3",
+                                "preferredquality": "128"}],
+            "postprocessor_args": {"ffmpeg": ["-ar", "44100", "-ac", "2"]},
+        }
+        try:
+            with yt_dlp.YoutubeDL(opts) as y:
+                info = y.extract_info(sorgu, download=True)
+            if "entries" in info:
+                info = info["entries"][0] if info["entries"] else None
+            if not info:
+                raise Exception("sonuc yok")
+            path = f"/tmp/{info['id']}.mp3"
+            if not os.path.exists(path):
+                raise Exception("dosya olusmadi")
+            return path, info["title"]
+        except Exception as e:
+            print("HATA", arama, e, flush=True)
+            son_hata = e
+    raise son_hata
 
 
 class Bot(BaseBot):
@@ -99,7 +105,7 @@ class Bot(BaseBot):
             try:
                 path, title = await asyncio.to_thread(indir, sorgu)
             except Exception as e:
-                print(e)
+                print("HATA genel", e, flush=True)
                 await self.highrise.chat("Şarkı bulunamadı.")
                 return
             with plock:
@@ -127,6 +133,7 @@ def ok():
     return "ok"
 
 
+@app.route("/radio.mp3")
 @app.route("/stream")
 def stream():
     q = queue.Queue(maxsize=300)
