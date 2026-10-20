@@ -1,6 +1,6 @@
 import os, asyncio, threading, queue, time, subprocess
 import yt_dlp
-from flask import Flask, Response
+from flask import Flask, Response, request
 from highrise import BaseBot, User
 from highrise.__main__ import main, BotDefinition
 
@@ -133,9 +133,12 @@ def ok():
     return "ok"
 
 
-@app.route("/radio.mp3")
-@app.route("/stream")
+@app.route("/radio.mp3", methods=["GET", "HEAD"])
+@app.route("/stream", methods=["GET", "HEAD"])
 def stream():
+    if request.method == "HEAD":
+        return Response(b"", mimetype="audio/mpeg",
+                        headers={"icy-name": "Radyo"})
     q = queue.Queue(maxsize=300)
     with llock:
         listeners.append(q)
