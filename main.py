@@ -9,6 +9,9 @@ from highrise.__main__ import main, BotDefinition
 OWNER = os.environ.get("OWNER_NAME", "RQTM").lower()      # bot sahibi
 DEFAULT_LANG = os.environ.get("DEFAULT_LANG", "ar")        # ar / tr / en
 BOT_POS = Position(11.0, 7.0, 11.0)                        # bot konumu
+POS_FIRST_DELAY = 10                                       # odaya girince kac sn sonra gitsin
+POS_CHECK_EVERY = 60                                       # konum kontrolu (sn)
+POS_TOL = 1.0                                              # kabul edilen sapma
 HINT_EVERY = 60                                            # saniye
 MAX_SEC = 720                                              # en uzun sarki (sn)
 MIN_SEC = 60                                               # 30 sn onizlemeleri atla
@@ -250,13 +253,19 @@ BAD_WORDS = ("remix", "live", "cover", "karaoke", "slowed", "reverb",
 YT_API_KEY = os.environ.get("YT_API_KEY")        # opsiyonel (sadece arama)
 YT_COOKIES = os.environ.get("YT_COOKIES")        # opsiyonel (cookies.txt icerigi)
 YT = {"blocked_at": 0.0}
+JAMENDO_ID = os.environ.get("JAMENDO_ID")   # opsiyonel, ucretsiz key
 COOKIE_FILE = None
-if YT_COOKIES:
-    try:
+try:
+    import shutil
+    if os.path.exists("/etc/secrets/cookies.txt"):      # Render "Secret Files"
+        shutil.copy("/etc/secrets/cookies.txt", "/tmp/cookies.txt")
+        COOKIE_FILE = "/tmp/cookies.txt"
+    elif YT_COOKIES:                                    # ya da ortam degiskeni
         open("/tmp/cookies.txt", "w").write(YT_COOKIES)
         COOKIE_FILE = "/tmp/cookies.txt"
-    except Exception as _e:
-        print("HATA cookie", _e, flush=True)
+    print("COOKIE", "var" if COOKIE_FILE else "yok", flush=True)
+except Exception as _e:
+    print("HATA cookie", _e, flush=True)
 
 
 def norm(x):
@@ -390,6 +399,44 @@ def _audius(q):
             for i in js.get("data", []) if i.get("id")]
 
 
+def _rutube(q):
+    import urllib.parse
+    u = ("https://rutube.ru/api/search/video/?format=json&query=" +
+         urllib.parse.quote(q))
+    js = json.loads(_http(u, 15))
+    out = []
+    for i in js.get("results", []):
+        if not i.get("id"):
+            continue
+        out.append({"title": i.get("title"),
+                    "uploader": (i.get("author") or {}).get("name"),
+                    "duration": i.get("duration"),
+                    "_url": i.get("video_url") or ("https://rutube.ru/video/%s/" % i["id"]),
+                    "_src": "rt"})
+    return out
+
+
+def _archive(q):
+    import urllib.parse
+    qq = 'title:("%s") AND mediatype:audio' % q.replace('"', " ")
+    u = ("https://archive.org/advancedsearch.php?rows=8&output=json"
+         "&fl%5B%5D=identifier&fl%5B%5D=title&q=" + urllib.parse.quote(qq))
+    js = json.loads(_http(u, 15))
+    return [{"title": d.get("title"), "uploader": "", "duration": None,
+             "_url": "https://archive.org/details/" + d["identifier"], "_src": "ia"}
+            for d in js.get("response", {}).get("docs", []) if d.get("identifier")]
+
+
+def _jamendo(q):
+    import urllib.parse
+    u = ("https://api.jamendo.com/v3.0/tracks/?format=json&limit=8&audioformat=mp31"
+         "&client_id=" + JAMENDO_ID + "&search=" + urllib.parse.quote(q))
+    js = json.loads(_http(u, 15))
+    return [{"title": i.get("name"), "uploader": i.get("artist_name"),
+             "duration": i.get("duration"), "_url": i.get("audio"), "_src": "jm"}
+            for i in js.get("results", []) if i.get("audio")]
+
+
 def _download_audius(url, title):
     raw = "/tmp/au_%d.raw" % int(time.time() * 1000)
     out = raw + ".mp3"
@@ -449,11 +496,15 @@ def indir(sorgu):
     jobs = [(p, q) for q in variants for p in ("scsearch12", "ytsearch8")]
     cands = {}
     last = None
-    with ThreadPoolExecutor(max_workers=10) as ex:
+    with ThreadPoolExecutor(max_workers=14) as ex:
         futs = [ex.submit(_search, p, q) for p, q in jobs]
         for qq in variants[:2]:
             futs.append(ex.submit(_dailymotion, qq))
             futs.append(ex.submit(_audius, qq))
+            futs.append(ex.submit(_rutube, qq))
+            futs.append(ex.submit(_archive, qq))
+            if JAMENDO_ID:
+                futs.append(ex.submit(_jamendo, qq))
         if YT_API_KEY:
             futs.append(ex.submit(_yt_api, q0))
         try:
@@ -492,7 +543,7 @@ def indir(sorgu):
         if is_yt(e) and time.time() - YT["blocked_at"] < 600:
             continue
         try:
-            if e.get("_src") == "au":
+            if e.get("_src") in ("au", "jm"):
                 r = _download_audius(e["_url"], e.get("title"))
             else:
                 r = _download(e["_url"])
@@ -519,12 +570,38 @@ class Bot(BaseBot):
         BOT["loop"] = asyncio.get_running_loop()
         self.my_id = session_metadata.user_id
         await self.refresh_users()
-        try:
-            await self.highrise.teleport(self.my_id, BOT_POS)
-        except Exception as e:
-            print("HATA teleport", e, flush=True)
+        asyncio.create_task(self.position_loop())
         asyncio.create_task(self.dance_loop())
         asyncio.create_task(self.hint_loop())
+
+    async def go_home(self):
+        try:
+            await self.highrise.teleport(self.my_id, BOT_POS)
+            print("KONUM isinlandi", flush=True)
+        except Exception as e:
+            print("HATA teleport", e, flush=True)
+
+    async def position_loop(self):
+        await asyncio.sleep(POS_FIRST_DELAY)
+        await self.go_home()
+        while True:
+            await asyncio.sleep(POS_CHECK_EVERY)
+            try:
+                room = await self.highrise.get_room_users()
+                me = None
+                for u, p in getattr(room, "content", []):
+                    if u.id == self.my_id:
+                        me = p
+                        break
+                ok = (isinstance(me, Position)
+                      and abs(me.x - BOT_POS.x) <= POS_TOL
+                      and abs(me.z - BOT_POS.z) <= POS_TOL
+                      and abs(me.y - BOT_POS.y) <= POS_TOL + 1)
+                if not ok:
+                    print("KONUM yanlis:", me, flush=True)
+                    await self.go_home()
+            except Exception as e:
+                print("HATA konum kontrol", e, flush=True)
 
     async def refresh_users(self):
         try:
