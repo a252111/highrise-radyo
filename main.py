@@ -7,23 +7,17 @@ try:
     from highrise import AnchorPosition
 except Exception:
     AnchorPosition = None
-try:
-    from highrise import Item
-except Exception:
-    Item = None
-from emotes import DANCE_DURATIONS
 from highrise.__main__ import main, BotDefinition
+from emotes import EMOTE_DURATIONS, DJ_DANCES
 
 # ================= AYARLAR =================
 OWNER = os.environ.get("OWNER_NAME", "RQTM").lower()      # bot sahibi
 DEFAULT_LANG = os.environ.get("DEFAULT_LANG", "ar")        # ar / tr / en
-DEFAULT_POS = (11.0, 7.0, 11.0)                            # !konum ile degistirilmediyse
+DEFAULT_POS = (11.0, 7.0, 11.0)                            # -konum ile degistirilmediyse
 POS_FIRST_DELAY = 10                                       # odaya girince kac sn sonra gitsin
 POS_CHECK_EVERY = 60                                       # konum kontrolu (sn)
 POS_TOL = 1.0                                              # kabul edilen sapma
-JOIN_HINT_COOLDOWN = 5                                     # girislerde ipucu arasi min sn
-DJ_ITEMS = [x.strip() for x in os.environ.get("DJ_ITEMS", "").split(",") if x.strip()]
-DJ_KEYS = ("dj", "headphone", "headset")                   # envanterde aranacak kelimeler
+JOIN_COOLDOWN = 60                                         # ayni kisi tekrar girerse mesaj arasi (sn)
 MAX_SEC = 720                                              # en uzun sarki (sn)
 MIN_SEC = 60                                               # 30 sn onizlemeleri atla
 DATA_FILE = os.environ.get("DATA_FILE", "/tmp/data.json")
@@ -37,8 +31,6 @@ BLUE, WHITE, GREEN, RED, YELLOW = "3399FF", "FFFFFF", "00FF66", "FF3333", "FFD70
 def col(hexc, text):
     return f"<#{hexc}>{text}"
 
-
-# Dans listesi: emotes.py (DANCE_DURATIONS)
 
 # ================= METINLER =================
 L = {
@@ -55,14 +47,15 @@ L = {
         "paused": "تم إيقاف الأغنية ⏸",
         "resumed": "تم استئناف الأغنية ▶️",
         "deleted": "تم حذف الأغنية الحالية 🗑",
+        "deleted_all": "تم حذف جميع الأغاني 🗑",
+        "deleted_own": "تم حذف أغنيتك 🗑",
+        "not_yours": "يمكنك حذف أغنيتك فقط ⛔",
         "restarted": "تمت إعادة الأغنية 🔁",
         "lang_set": "تم تعيين اللغة: العربية ✅",
         "empty": "لا توجد أغنية",
         "now": "يعمل الآن",
         "next": "التالي",
         "nothing": "فارغ",
-        "cleared": "تم حذف كل الأغاني 🗑",
-        "dj": "تم تجهيز زي الـDJ 🎧",
     },
     "tr": {
         "search": "Şarkı aranıyor:",
@@ -77,14 +70,15 @@ L = {
         "paused": "Şarkı durduruldu ⏸",
         "resumed": "Şarkı devam ediyor ▶️",
         "deleted": "Çalan şarkı silindi 🗑",
+        "deleted_all": "Tüm şarkılar silindi 🗑",
+        "deleted_own": "Şarkın silindi 🗑",
+        "not_yours": "Sadece kendi şarkını silebilirsin ⛔",
         "restarted": "Şarkı baştan başlatıldı 🔁",
         "lang_set": "Dil Türkçe olarak ayarlandı ✅",
         "empty": "Çalan şarkı yok",
         "now": "Çalan",
         "next": "Sırada",
         "nothing": "Boş",
-        "cleared": "Tüm şarkılar silindi 🗑",
-        "dj": "DJ kıyafeti giyildi 🎧",
     },
     "en": {
         "search": "Searching for song:",
@@ -99,14 +93,15 @@ L = {
         "paused": "Song paused ⏸",
         "resumed": "Song resumed ▶️",
         "deleted": "Current song deleted 🗑",
+        "deleted_all": "All songs deleted 🗑",
+        "deleted_own": "Your song was deleted 🗑",
+        "not_yours": "You can only delete your own song ⛔",
         "restarted": "Song restarted 🔁",
         "lang_set": "Language set to English ✅",
         "empty": "No song playing",
         "now": "Now",
         "next": "Next",
         "nothing": "Empty",
-        "cleared": "All songs deleted 🗑",
-        "dj": "DJ outfit applied 🎧",
     },
 }
 
@@ -166,13 +161,13 @@ def bot_pos():
 POSMSG = {
     "tr": {"set": "Bot konumu ayarlandi: {x} {y} {z} ✅",
            "sit": "Oturuyorsun, konum okunamadi. Ayakta dur ve tekrar yaz.",
-           "bad": "Kullanim: !konum  (ayakta durdugun yer) veya !konum x y z"},
+           "bad": "Kullanim: -konum  (ayakta durdugun yer) veya -konum x y z"},
     "en": {"set": "Bot position set: {x} {y} {z} ✅",
            "sit": "You are seated, position unreadable. Stand and try again.",
-           "bad": "Usage: !konum (where you stand) or !konum x y z"},
+           "bad": "Usage: -konum (where you stand) or -konum x y z"},
     "ar": {"set": "تم تعيين موقع البوت: {x} {y} {z} ✅",
            "sit": "أنت جالس، تعذر قراءة الموقع. قف وأعد المحاولة.",
-           "bad": "الاستخدام: !konum أو !konum x y z"},
+           "bad": "الاستخدام: -konum أو -konum x y z"},
 }
 
 
@@ -586,37 +581,62 @@ def indir(sorgu):
     raise last or Exception("bulunamadi")
 
 
-def is_dj_item(item_id):
-    """'cuffedjeans' icindeki 'dj' gibi tesaduflere takilmaz."""
-    i = item_id.lower()
-    if "headphone" in i or "headset" in i:
-        return True
-    return "dj" in re.split(r"[-_ ]", i)
-
-
-# Komutlar (tr / ar / en)
-PAUSE_C = {"-durdur", "-وقف", "-stop"}
-RESUME_C = {"-başlat", "-baslat", "-ابدا", "-never", "-start", "-resume"}
-DELETE_C = {"-sil", "-احذف", "-delete"}
-RESTART_C = {"-tekrar", "-اعادة", "-إعادة", "-restart"}
-
-
 # ================= BOT =================
+PAUSE_CMDS = ("-durdur", "-وقف", "-stop")
+RESUME_CMDS = ("-başlat", "-baslat", "-ابدا", "-never")
+DELETE_CMDS = ("-sil", "-احذف", "-delete")
+RESTART_CMDS = ("-tekrar", "-اعادة", "-إعادة", "-restart")
+POS_CMDS = ("-konum", "-pos", "-موقع")
+ADD_OWNER_CMDS = ("-ضيف_مالك",)
+LIST_CMDS = ("-liste", "-list", "-قائمة")
+ALL_WORDS = ("hepsi", "all", "الكل")
+
+
+def is_err(res):
+    """Highrise SDK hata dondururse (exception atmadan) yakala."""
+    return res is not None and type(res).__name__ == "Error"
+
+
 class Bot(BaseBot):
     def __init__(self):
         super().__init__()
         self.id2name = {}
         self.pending = set()
+        self.last_greet = {}
+        self.my_id = None
+        self.tasks = []
+        self.restart_evt = asyncio.Event()   # True olursa supervisor botu yeniden baglar
+
+    # ---------- yasam dongusu ----------
+    def stop_tasks(self):
+        for t in self.tasks:
+            t.cancel()
+        self.tasks = []
+
+    def spawn(self, coro):
+        t = asyncio.create_task(coro)
+        self.tasks.append(t)
+        return t
 
     async def on_start(self, session_metadata):
+        self.stop_tasks()                    # yeniden baglanmada kopya dongu olmasin
         BOT["inst"] = self
         BOT["loop"] = asyncio.get_running_loop()
         self.my_id = session_metadata.user_id
         await self.refresh_users()
-        asyncio.create_task(self.position_loop())
-        asyncio.create_task(self.dance_loop())
-        asyncio.create_task(self.wear_dj())
-        self.last_hint = 0.0
+        self.spawn(self.safe_loop(self.position_loop))
+        self.spawn(self.safe_loop(self.dance_loop))
+
+    async def safe_loop(self, fn):
+        """Dongu bir hatayla olmesin: hata olursa kisa bekleyip tekrar baslat."""
+        while True:
+            try:
+                await fn()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                print("HATA dongu", fn.__name__, repr(e), flush=True)
+                await asyncio.sleep(5)
 
     async def go_home(self):
         try:
@@ -628,15 +648,28 @@ class Bot(BaseBot):
     async def position_loop(self):
         await asyncio.sleep(POS_FIRST_DELAY)
         await self.go_home()
+        missing = 0     # bot odada gorunmuyorsa art arda sayac
+        errors = 0      # oda sorgusu art arda hata sayaci
         while True:
             await asyncio.sleep(POS_CHECK_EVERY)
             try:
                 room = await self.highrise.get_room_users()
                 me = None
+                found = False
                 for u, p in getattr(room, "content", []):
                     if u.id == self.my_id:
-                        me = p
+                        me, found = p, True
                         break
+                errors = 0
+                if not found:
+                    missing += 1
+                    print("UYARI bot oda listesinde yok", missing, flush=True)
+                    if missing >= 3:
+                        print("Bot odadan dusmus, yeniden baglaniyor", flush=True)
+                        self.restart_evt.set()
+                        return
+                    continue
+                missing = 0
                 tp = bot_pos()
                 ok = (isinstance(me, Position)
                       and abs(me.x - tp.x) <= POS_TOL
@@ -645,8 +678,15 @@ class Bot(BaseBot):
                 if not ok:
                     print("KONUM yanlis:", me, flush=True)
                     await self.go_home()
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
-                print("HATA konum kontrol", e, flush=True)
+                errors += 1
+                print("HATA konum kontrol", errors, repr(e), flush=True)
+                if errors >= 5:
+                    print("Baglanti kopmus gorunuyor, yeniden baglaniyor", flush=True)
+                    self.restart_evt.set()
+                    return
 
     async def refresh_users(self):
         try:
@@ -656,105 +696,120 @@ class Bot(BaseBot):
         except Exception as e:
             print("HATA oda", e, flush=True)
 
+    # ---------- odaya girenlere ipucu ----------
     async def on_user_join(self, user: User, position=None):
         self.id2name[user.id] = user.username
-        if user.id == getattr(self, "my_id", None):
-            return
-        now = time.time()
-        if now - self.last_hint < JOIN_HINT_COOLDOWN:
-            return
-        self.last_hint = now
         try:
-            await self.highrise.chat(col(BLUE, "@" + user.username) + " " + col(GREEN, T()["hint"]))
+            if user.id == self.my_id:
+                return
+            now = time.time()
+            if now - self.last_greet.get(user.id, 0) < JOIN_COOLDOWN:
+                return
+            self.last_greet[user.id] = now
+            msg = col(BLUE, "@" + user.username) + " " + col(GREEN, T()["hint"])
+            await self.highrise.chat(msg[:255])
         except Exception as e:
-            print("HATA ipucu", e, flush=True)
+            print("HATA giris mesaji", e, flush=True)
 
+    # ---------- DJ dansi ----------
     async def dance_loop(self):
-        names = list(DANCE_DURATIONS)
+        fails = {}      # emote -> art arda hata sayisi
+        banned = set()  # 3 kez calismayan (sahip olunmayan) emote'lar
         while True:
-            for em in random.sample(names, len(names)):
+            pool = [e for e in DJ_DANCES if e not in banned]
+            if not pool:
+                banned.clear()
+                fails.clear()
+                await asyncio.sleep(10)
+                continue
+            for em in random.sample(pool, len(pool)):
                 try:
-                    await self.highrise.send_emote(em)
-                    wait = DANCE_DURATIONS[em] + 0.3   # dansin gercek suresi kadar bekle
+                    res = await self.highrise.send_emote(em)
+                    bad = is_err(res)
+                except asyncio.CancelledError:
+                    raise
                 except Exception:
-                    wait = 0.5                          # calismayan dansi hemen atla
-                await asyncio.sleep(wait)
+                    bad = True
+                if bad:
+                    fails[em] = fails.get(em, 0) + 1
+                    if fails[em] >= 3:
+                        banned.add(em)
+                        print("DANS atlandi:", em, flush=True)
+                    await asyncio.sleep(1)      # calismayan emote'ta bosuna bekleme
+                    continue
+                fails[em] = 0
+                # emote'un gercek suresi kadar bekle, sonra siradaki dansa gec
+                await asyncio.sleep(max(2.0, EMOTE_DURATIONS.get(em, 10.0) - 0.3))
 
-    async def wear_dj(self):
-        await asyncio.sleep(3)
-        if Item is None:
-            return
-        ids = list(DJ_ITEMS) + list(data.get("dj_items", []))
+    # ---------- sarki sahipligi ----------
+    def user_has_song(self, uid):
+        if state["user_id"] == uid:
+            return True
+        with plock:
+            return any(x[2] == uid for x in playlist)
+
+    async def play_request(self, user, sorgu):
+        t = T()
         try:
-            inv = await self.highrise.get_inventory()
-            for it in getattr(inv, "items", []) or []:
-                if is_dj_item(it.id):
-                    ids.append(it.id)
-        except Exception as e:
-            print("HATA envanter", e, flush=True)
-        cat = lambda i: i.split("-")[0]
-        chosen = {}
-        for i in ids:                       # kategori basina 1 esya
-            chosen.setdefault(cat(i), i)
-        if not chosen:
-            print("DJ esyasi bulunamadi (DJ_ITEMS ayarla)", flush=True)
-            return
-        try:
-            resp = await self.highrise.get_my_outfit()
-            cur = list(getattr(resp, "outfit", resp) or [])
-        except Exception as e:
-            print("HATA outfit oku", e, flush=True)
-            cur = []
-        keep = [x for x in cur if cat(x.id) not in chosen]
-        mk = lambda i: Item(type="clothing", amount=1, id=i,
-                            account_bound=False, active_palette=-1)
-        new = [mk(i) for i in chosen.values()]
-        try:
-            await self.highrise.set_outfit(outfit=keep + new)
-            print("DJ outfit giyildi", list(chosen.values()), flush=True)
-            return
-        except Exception as e:
-            print("HATA outfit toplu", e, flush=True)
-        for it in new:                      # gecersiz esyayi atla, digerlerini giy
+            sorgu = await asyncio.to_thread(resolve_query, sorgu)
+            if not sorgu:
+                await self.highrise.chat(
+                    col(RED, t["notfound"]) + " " + col(BLUE, user.username) + " ⚠️")
+                return
+            await self.highrise.chat(
+                (t["search"] + " " + col(BLUE, sorgu[:60]) + " | " +
+                 col(WHITE, user.username) + " " +
+                 col(GREEN, "▰▰") + col(RED, "▱▱▱"))[:255])
             try:
-                await self.highrise.set_outfit(outfit=keep + [it])
-                keep.append(it)
+                path, title = await asyncio.to_thread(indir, sorgu)
             except Exception as e:
-                print("HATA esya atlandi", it.id, e, flush=True)
+                print("HATA genel", e, flush=True)
+                await self.highrise.chat(
+                    col(RED, t["notfound"]) + " " + col(BLUE, user.username) + " ⚠️")
+                return
+            with plock:
+                playlist.append((path, title, user.id, user.username))
+                ahead = len(playlist) - 1 + (1 if state["title"] else 0)
+            if ahead > 0:
+                await self.highrise.chat(
+                    (col(WHITE, title[:60]) + " " +
+                     col(YELLOW, t["added"].format(n=ahead)))[:255])
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print("HATA play_request", repr(e), flush=True)
+        finally:
+            self.pending.discard(user.id)
 
-    def delete_songs(self, uid, owner, arg):
-        """Sarki silme. Doner: 'deleted' / 'cleared' / None (yetki yok)."""
-        arg = (arg or "").strip().lower()
+    async def delete_song(self, user, owner, args):
+        """-sil: bot sahibi hepsini, sarki sahibi sadece kendi sarkisini silebilir."""
+        t = T()
         if owner:
-            if arg in ("all", "hepsi", "الكل"):
+            if args and args[0].lower() in ALL_WORDS:
                 with plock:
-                    items = list(playlist)
+                    old = list(playlist)
                     playlist.clear()
-                for x in items:
+                for it in old:
                     try:
-                        os.remove(x[0])
+                        os.remove(it[0])
                     except OSError:
                         pass
+                if state["title"]:
+                    state["skip"] = True
+                await self.highrise.chat(t["deleted_all"])
+            elif state["title"]:
                 state["skip"] = True
-                return "cleared"
-            if state["title"]:
-                state["skip"] = True
-                return "deleted"
-            with plock:
-                x = playlist.pop(0) if playlist else None
-            if x:
-                try:
-                    os.remove(x[0])
-                except OSError:
-                    pass
-                return "deleted"
-            return "deleted"
-        # sarki sahibi: sadece kendi sarkisi
-        if state["user_id"] == uid:
+                await self.highrise.chat(t["deleted"])
+            else:
+                await self.highrise.chat(t["empty"])
+            return
+        # normal kullanici: sadece kendi sarkisi
+        done = False
+        if state["title"] and state["user_id"] == user.id:
             state["skip"] = True
-            return "deleted"
+            done = True
         with plock:
-            mine = [x for x in playlist if x[2] == uid]
+            mine = [x for x in playlist if x[2] == user.id]
             for x in mine:
                 playlist.remove(x)
         for x in mine:
@@ -762,65 +817,50 @@ class Bot(BaseBot):
                 os.remove(x[0])
             except OSError:
                 pass
-        return "deleted" if mine else None
+        if done or mine:
+            await self.highrise.chat(t["deleted_own"])
+        else:
+            await self.highrise.chat(t["not_yours"])
 
-    def user_has_song(self, uid):
-        if state["user_id"] == uid:
-            return True
-        with plock:
-            return any(x[2] == uid for x in playlist)
-
+    # ---------- sohbet komutlari ----------
     async def on_chat(self, user: User, message: str):
+        try:
+            await self.handle_chat(user, message)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print("HATA on_chat", repr(e), flush=True)
+
+    async def handle_chat(self, user: User, message: str):
         self.id2name[user.id] = user.username
-        m = message.strip()
+        m = (message or "").strip()
+        if not m.startswith("-"):
+            return
+        parts = m.split()
+        cmd = parts[0].lower()
+        args = parts[1:]
         t = T()
         owner = is_owner(user.username)
 
-        parts0 = m.split(None, 1)
-        cmd = parts0[0].lower() if parts0 else ""
-        arg = parts0[1].strip() if len(parts0) > 1 else ""
-
-        if cmd in ("-p", "-play"):
-            sorgu = arg
+        if cmd == "-p":
+            sorgu = m[len(parts[0]):].strip()
             if not sorgu:
                 return
             if not owner and (user.id in self.pending or self.user_has_song(user.id)):
                 await self.highrise.chat(col(RED, t["wait"]))
                 return
             self.pending.add(user.id)
-            try:
-                sorgu = await asyncio.to_thread(resolve_query, sorgu)
-                if not sorgu:
-                    await self.highrise.chat(
-                        col(RED, t["notfound"]) + " " + col(BLUE, user.username) + " ⚠️")
-                    return
-                await self.highrise.chat(
-                    t["search"] + " " + col(BLUE, sorgu[:60]) + " | " +
-                    col(WHITE, user.username) + " " +
-                    col(GREEN, "▰▰") + col(RED, "▱▱▱"))
-                try:
-                    path, title = await asyncio.to_thread(indir, sorgu)
-                except Exception as e:
-                    print("HATA genel", e, flush=True)
-                    await self.highrise.chat(
-                        col(RED, t["notfound"]) + " " + col(BLUE, user.username) + " ⚠️")
-                    return
-                with plock:
-                    playlist.append((path, title, user.id, user.username))
-                    ahead = len(playlist) - 1 + (1 if state["title"] else 0)
-                if ahead > 0:
-                    await self.highrise.chat(
-                        col(WHITE, title[:60]) + " " +
-                        col(YELLOW, t["added"].format(n=ahead)))
-            finally:
-                self.pending.discard(user.id)
+            # arama uzun surer; sohbet olay dongusunu bloklamasin diye ayri gorevde
+            asyncio.create_task(self.play_request(user, sorgu))
 
-        elif cmd in ("!konum", "!pos", "!موقع"):
+        elif cmd in DELETE_CMDS:
+            await self.delete_song(user, owner, args)
+
+        elif cmd in POS_CMDS:
             if not owner:
                 await self.highrise.chat(t["no_perm"])
                 return
             pm = POSMSG[data["lang"]]
-            parts = m.split()
             try:
                 if len(parts) >= 4:
                     x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
@@ -843,11 +883,10 @@ class Bot(BaseBot):
             await self.highrise.chat(pm["set"].format(x=data["pos"][0], y=data["pos"][1], z=data["pos"][2]))
             await self.go_home()
 
-        elif m.startswith("!ضيف_مالك"):
+        elif cmd in ADD_OWNER_CMDS:
             if user.username.lower() != OWNER:
                 await self.highrise.chat(t["no_perm"])
                 return
-            parts = m.split()
             if len(parts) < 2:
                 return
             name = parts[1].lstrip("@").lower()
@@ -856,14 +895,14 @@ class Bot(BaseBot):
                 await asyncio.to_thread(save_data)
             await self.highrise.chat(t["owner_added"].format(u="@" + name))
 
-        elif cmd in PAUSE_C or cmd in RESUME_C or cmd in RESTART_C:
+        elif cmd in PAUSE_CMDS or cmd in RESUME_CMDS or cmd in RESTART_CMDS:
             if not owner:
                 await self.highrise.chat(t["no_perm"])
                 return
-            if cmd in PAUSE_C:
+            if cmd in PAUSE_CMDS:
                 state["paused"] = True
                 await self.highrise.chat(t["paused"])
-            elif cmd in RESUME_C:
+            elif cmd in RESUME_CMDS:
                 state["paused"] = False
                 await self.highrise.chat(t["resumed"])
             else:
@@ -871,32 +910,13 @@ class Bot(BaseBot):
                 state["paused"] = False
                 await self.highrise.chat(t["restarted"])
 
-        elif cmd in DELETE_C:
-            res = self.delete_songs(user.id, owner, arg)
-            if res is None:
-                await self.highrise.chat(t["no_perm"])
-            else:
-                await self.highrise.chat(t[res])
-
-        elif cmd in ("-dj", "!dj"):
-            if not owner:
-                await self.highrise.chat(t["no_perm"])
-                return
-            if arg:                         # -dj item-id : listeye ekle (kalici)
-                ids = data.setdefault("dj_items", [])
-                if arg not in ids:
-                    ids.append(arg)
-                    await asyncio.to_thread(save_data)
-            await self.wear_dj()
-            await self.highrise.chat(t["dj"])
-
-        elif m in ("!liste", "!list", "!قائمة"):
+        elif cmd in LIST_CMDS:
             with plock:
                 nxt = [x[1][:30] for x in playlist]
             cur = state["title"] or t["empty"]
             await self.highrise.chat(
-                f"{t['now']}: {cur[:50]} | {t['next']}: "
-                f"{', '.join(nxt) if nxt else t['nothing']}")
+                (f"{t['now']}: {cur[:50]} | {t['next']}: "
+                 f"{', '.join(nxt) if nxt else t['nothing']}")[:255])
 
     async def on_message(self, user_id: str, conversation_id: str,
                          is_new_conversation: bool):
@@ -950,6 +970,38 @@ def stream():
                     headers={"Cache-Control": "no-cache", "icy-name": "Radyo"})
 
 
+async def run_bot(bot):
+    try:
+        await main([BotDefinition(bot, os.environ["ROOM_ID"], os.environ["BOT_TOKEN"])])
+    except SystemExit:
+        print("SDK cikis istedi, yeniden baglanilacak", flush=True)
+
+
+async def supervisor():
+    """Bot odadan duserse / baglanti koparsa otomatik yeniden baglanir."""
+    delay = 5
+    while True:
+        bot = Bot()
+        started = time.time()
+        main_task = asyncio.create_task(run_bot(bot))
+        evt_task = asyncio.create_task(bot.restart_evt.wait())
+        try:
+            await asyncio.wait({main_task, evt_task}, return_when=asyncio.FIRST_COMPLETED)
+            if main_task.done() and not main_task.cancelled() and main_task.exception():
+                print("HATA bot coktu:", repr(main_task.exception()), flush=True)
+            else:
+                print("Bot baglantisi bitti, yeniden baglaniliyor", flush=True)
+        finally:
+            for tk in (main_task, evt_task):
+                tk.cancel()
+            await asyncio.gather(main_task, evt_task, return_exceptions=True)
+            bot.stop_tasks()
+        # uzun sure ayakta kaldiysa bekleme kisa, hemen coktuyse giderek artar
+        delay = 5 if time.time() - started > 120 else min(delay * 2, 60)
+        print("Yeniden baglanma bekleme:", delay, "sn", flush=True)
+        await asyncio.sleep(delay)
+
+
 if __name__ == "__main__":
     load_data()
     port = int(os.environ.get("PORT", 10000))
@@ -957,4 +1009,4 @@ if __name__ == "__main__":
     threading.Thread(
         target=lambda: app.run(host="0.0.0.0", port=port, threaded=True),
         daemon=True).start()
-    asyncio.run(main([BotDefinition(Bot(), os.environ["ROOM_ID"], os.environ["BOT_TOKEN"])]))
+    asyncio.run(supervisor())
