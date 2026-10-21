@@ -1,4 +1,4 @@
-import os, asyncio, threading, queue, time, subprocess, json, random
+import os, re, asyncio, threading, queue, time, subprocess, json, random
 import urllib.request
 import yt_dlp
 from flask import Flask, Response, request
@@ -244,17 +244,83 @@ def radio_loop():
 
 # ================= SARKI BULMA =================
 TR_MAP = str.maketrans("İıŞşĞğÜüÖöÇç", "IiSsGgUuOoCc")
+BAD_WORDS = ("remix", "live", "cover", "karaoke", "slowed", "reverb",
+             "sped up", "nightcore", "8d", "instrumental", "full album",
+             "playlist", "1 hour", "mix")
+YT_API_KEY = os.environ.get("YT_API_KEY")        # opsiyonel (sadece arama)
+YT_COOKIES = os.environ.get("YT_COOKIES")        # opsiyonel (cookies.txt icerigi)
+COOKIE_FILE = None
+if YT_COOKIES:
+    try:
+        open("/tmp/cookies.txt", "w").write(YT_COOKIES)
+        COOKIE_FILE = "/tmp/cookies.txt"
+    except Exception as _e:
+        print("HATA cookie", _e, flush=True)
+
+
+def norm(x):
+    x = (x or "").translate(TR_MAP).lower()
+    return re.sub(r"[^a-z0-9\u0600-\u06ff ]", " ", x)
+
+
+def score(e, qnorm, qwords):
+    title = norm((e.get("title") or "") + " " +
+                 (e.get("uploader") or e.get("channel") or ""))
+    dur = e.get("duration")
+    if dur and (dur > MAX_SEC or dur < MIN_SEC):
+        return None
+    hit = sum(1 for w in qwords if w in title)
+    if qwords and hit == 0:
+        return None
+    sc = 10.0 * hit / max(1, len(qwords))
+    for w in BAD_WORDS:
+        if w in title and w not in qnorm:
+            sc -= 3
+    if dur and 120 <= dur <= 480:
+        sc += 1
+    if "official" in title or "topic" in title:
+        sc += 0.5
+    return sc
+
+
+def _search(prefix, q):
+    with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True,
+                           "extract_flat": True, "socket_timeout": 15,
+                           "cookiefile": COOKIE_FILE}) as y:
+        res = y.extract_info(f"{prefix}:{q}", download=False)
+    out = []
+    for e in (res.get("entries") or []):
+        if e:
+            e = dict(e)
+            e["_url"] = e.get("webpage_url") or e.get("url")
+            out.append(e)
+    return out
+
+
+def _yt_api(q):
+    import urllib.parse
+    u = ("https://www.googleapis.com/youtube/v3/search?part=snippet&type=video"
+         "&maxResults=8&q=" + urllib.parse.quote(q) + "&key=" + YT_API_KEY)
+    with urllib.request.urlopen(u, timeout=10) as r:
+        js = json.loads(r.read().decode())
+    return [{"title": i["snippet"]["title"],
+             "uploader": i["snippet"]["channelTitle"],
+             "duration": None,
+             "_url": "https://www.youtube.com/watch?v=" + i["id"]["videoId"]}
+            for i in js.get("items", []) if i.get("id", {}).get("videoId")]
 
 
 def _download(url):
     opts = {
-        "format": "bestaudio/best",
+        "format": "bestaudio[abr<=160]/bestaudio/best",
         "outtmpl": "/tmp/%(id)s.%(ext)s",
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
         "socket_timeout": 20,
         "retries": 2,
+        "concurrent_fragment_downloads": 4,
+        "cookiefile": COOKIE_FILE,
         "postprocessors": [{"key": "FFmpegExtractAudio",
                             "preferredcodec": "mp3",
                             "preferredquality": "128"}],
@@ -271,42 +337,49 @@ def _download(url):
 
 
 def indir(sorgu):
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     q0 = sorgu.strip()
-    variants = [q0]
     ascii_q = q0.translate(TR_MAP)
-    if ascii_q != q0:
-        variants.append(ascii_q)
-    variants.append(q0 + " official audio")
+    variants = [q0]
+    variants.append(ascii_q if ascii_q != q0 else q0 + " official audio")
     variants.append(q0 + " lyrics")
+    qnorm = norm(q0)
+    qwords = [w for w in qnorm.split() if len(w) > 1]
+
+    jobs = [(p, q) for q in variants for p in ("scsearch8", "ytsearch8")]
+    cands = {}
     last = None
-    for q in variants:
-        for prefix in ("scsearch6", "ytsearch6"):
-            try:
-                with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True,
-                                       "extract_flat": True,
-                                       "socket_timeout": 20}) as y:
-                    res = y.extract_info(f"{prefix}:{q}", download=False)
-                entries = [e for e in (res.get("entries") or []) if e]
-            except Exception as e:
-                print("HATA arama", prefix, q, e, flush=True)
-                last = e
-                continue
-            tried = 0
-            for e in entries:
-                dur = e.get("duration")
-                if dur and (dur > MAX_SEC or dur < MIN_SEC):
-                    continue
-                url = e.get("webpage_url") or e.get("url")
-                if not url:
-                    continue
-                tried += 1
-                if tried > 3:
-                    break
+    with ThreadPoolExecutor(max_workers=7) as ex:
+        futs = [ex.submit(_search, p, q) for p, q in jobs]
+        if YT_API_KEY:
+            futs.append(ex.submit(_yt_api, q0))
+        try:
+            for f in as_completed(futs, timeout=45):
                 try:
-                    return _download(url)
-                except Exception as ex:
-                    print("HATA indir", prefix, url, ex, flush=True)
-                    last = ex
+                    for e in f.result():
+                        if e.get("_url") and e["_url"] not in cands:
+                            cands[e["_url"]] = e
+                except Exception as e:
+                    print("HATA arama", e, flush=True)
+                    last = e
+        except Exception as e:
+            print("HATA arama zaman asimi", e, flush=True)
+
+    ranked = []
+    for e in cands.values():
+        sc = score(e, qnorm, qwords)
+        if sc is not None:
+            ranked.append((sc, e))
+    ranked.sort(key=lambda x: -x[0])
+    order = [e for _, e in ranked] or list(cands.values())
+    print("ADAY", len(cands), "SECILEN", len(order), flush=True)
+
+    for e in order[:4]:
+        try:
+            return _download(e["_url"])
+        except Exception as ex:
+            print("HATA indir", e["_url"], ex, flush=True)
+            last = ex
     raise last or Exception("bulunamadi")
 
 
