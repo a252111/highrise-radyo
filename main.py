@@ -1,130 +1,465 @@
-import os, asyncio, threading, queue, time, subprocess
+import os, asyncio, threading, queue, time, subprocess, json, random
+import urllib.request
 import yt_dlp
 from flask import Flask, Response, request
-from highrise import BaseBot, User
+from highrise import BaseBot, User, Position
 from highrise.__main__ import main, BotDefinition
 
+# ================= AYARLAR =================
+OWNER = os.environ.get("OWNER_NAME", "RQTM").lower()      # bot sahibi
+DEFAULT_LANG = os.environ.get("DEFAULT_LANG", "ar")        # ar / tr / en
+BOT_POS = Position(11.0, 7.0, 11.0)                        # bot konumu
+HINT_EVERY = 60                                            # saniye
+MAX_SEC = 720                                              # en uzun sarki (sn)
+MIN_SEC = 60                                               # 30 sn onizlemeleri atla
+DATA_FILE = os.environ.get("DATA_FILE", "/tmp/data.json")
+UPSTASH_URL = os.environ.get("UPSTASH_URL")                # opsiyonel kalici depo
+UPSTASH_TOKEN = os.environ.get("UPSTASH_TOKEN")
+
+# Renkler (sohbette <#RRGGBB> etiketi)
+BLUE, WHITE, GREEN, RED, YELLOW = "3399FF", "FFFFFF", "00FF66", "FF3333", "FFD700"
+
+
+def col(hexc, text):
+    return f"<#{hexc}>{text}"
+
+
+# Dans listesi (calismayan olursa sessizce atlanir)
+EMOTES = [
+    "dance-macarena", "dance-tiktok8", "dance-tiktok9", "dance-tiktok10",
+    "dance-tiktok2", "dance-blackpink", "dance-pennywise", "dance-shoppingcart",
+    "dance-russian", "dance-weird", "dance-employee", "dance-breakdance",
+    "emote-gordonshuffle", "dance-icecream", "dance-wrong", "dance-touch",
+    "idle-dance-casual",
+]
+
+# ================= METINLER =================
+L = {
+    "ar": {
+        "search": "جار البحث عن أغنية",
+        "added": "تمت إضافته إلى القائمة، يمكنك الاستماع بعد {n} أغنية 🎶",
+        "wait": "عليك الانتظار حتى تنتهي الأغنية السابقة قبل أن تتمكن من بدء أغنية أخرى 🛑",
+        "notfound": "الأغنية التي طلبتها غير متوفرة",
+        "playing_a": "الأغنية التالية قيد التشغيل 🎶",
+        "playing_b": "، مالك الأغنية",
+        "hint": "لتشغيل الأغنية التي تريدها، اكتب !play و اسم الأغنية. 🎵🎼",
+        "owner_added": "تمت إضافة {u} كمالك للبوت ✅",
+        "no_perm": "ليس لديك صلاحية ⛔",
+        "paused": "تم إيقاف الأغنية ⏸",
+        "resumed": "تم استئناف الأغنية ▶️",
+        "deleted": "تم حذف الأغنية الحالية 🗑",
+        "restarted": "تمت إعادة الأغنية 🔁",
+        "lang_set": "تم تعيين اللغة: العربية ✅",
+        "empty": "لا توجد أغنية",
+        "now": "يعمل الآن",
+        "next": "التالي",
+        "nothing": "فارغ",
+    },
+    "tr": {
+        "search": "Şarkı aranıyor:",
+        "added": "listeye eklendi, {n} şarkı sonra dinleyebilirsin 🎶",
+        "wait": "Yeni şarkı açmak için önceki şarkının bitmesini beklemelisin 🛑",
+        "notfound": "İstediğin şarkı bulunamadı",
+        "playing_a": "Sıradaki şarkı çalıyor 🎶",
+        "playing_b": ", şarkı sahibi:",
+        "hint": "İstediğin şarkıyı çalmak için !play yazıp şarkı adını yaz. 🎵🎼",
+        "owner_added": "{u} bot sahibi yapıldı ✅",
+        "no_perm": "Yetkin yok ⛔",
+        "paused": "Şarkı durduruldu ⏸",
+        "resumed": "Şarkı devam ediyor ▶️",
+        "deleted": "Çalan şarkı silindi 🗑",
+        "restarted": "Şarkı baştan başlatıldı 🔁",
+        "lang_set": "Dil Türkçe olarak ayarlandı ✅",
+        "empty": "Çalan şarkı yok",
+        "now": "Çalan",
+        "next": "Sırada",
+        "nothing": "Boş",
+    },
+    "en": {
+        "search": "Searching for song:",
+        "added": "added to the list, you can listen after {n} songs 🎶",
+        "wait": "You must wait for your previous song to finish before starting another 🛑",
+        "notfound": "The song you requested is not available",
+        "playing_a": "Next song is now playing 🎶",
+        "playing_b": ", song owner:",
+        "hint": "To play a song you want, type !play and the song name. 🎵🎼",
+        "owner_added": "{u} is now a bot owner ✅",
+        "no_perm": "You don't have permission ⛔",
+        "paused": "Song paused ⏸",
+        "resumed": "Song resumed ▶️",
+        "deleted": "Current song deleted 🗑",
+        "restarted": "Song restarted 🔁",
+        "lang_set": "Language set to English ✅",
+        "empty": "No song playing",
+        "now": "Now",
+        "next": "Next",
+        "nothing": "Empty",
+    },
+}
+
+# ================= KALICI VERI =================
+data = {"lang": DEFAULT_LANG if DEFAULT_LANG in L else "ar", "owners": []}
+dlock = threading.Lock()
+
+
+def _up(path, body=None):
+    req = urllib.request.Request(
+        UPSTASH_URL.rstrip("/") + path,
+        data=body.encode() if body is not None else None,
+        headers={"Authorization": "Bearer " + UPSTASH_TOKEN},
+        method="POST" if body is not None else "GET")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read().decode())
+
+
+def load_data():
+    try:
+        if UPSTASH_URL and UPSTASH_TOKEN:
+            res = _up("/get/radio_data").get("result")
+            if res:
+                data.update(json.loads(res))
+        elif os.path.exists(DATA_FILE):
+            data.update(json.load(open(DATA_FILE)))
+    except Exception as e:
+        print("HATA veri yukle", e, flush=True)
+
+
+def save_data():
+    try:
+        with dlock:
+            s = json.dumps(data)
+        if UPSTASH_URL and UPSTASH_TOKEN:
+            _up("/set/radio_data", s)
+        else:
+            open(DATA_FILE, "w").write(s)
+    except Exception as e:
+        print("HATA veri kaydet", e, flush=True)
+
+
+def T():
+    return L[data["lang"]]
+
+
+def is_owner(name):
+    n = (name or "").lower().lstrip("@")
+    return n == OWNER or n in data["owners"]
+
+
+# ================= RADYO =================
 BPS = 16000
 CHUNK = 4096
-
 listeners = []
 llock = threading.Lock()
-playlist = []
+playlist = []          # (path, title, user_id, username)
 plock = threading.Lock()
-now = {"title": None, "skip": False}
+state = {"title": None, "user_id": None, "username": None,
+         "skip": False, "restart": False, "paused": False}
+BOT = {"inst": None, "loop": None}
 
 
-def broadcast(data):
+def say(msg):
+    b, lp = BOT["inst"], BOT["loop"]
+    if b and lp:
+        asyncio.run_coroutine_threadsafe(b.highrise.chat(msg[:255]), lp)
+
+
+def broadcast(buf):
     with llock:
         for q in listeners:
             try:
-                q.put_nowait(data)
+                q.put_nowait(buf)
             except queue.Full:
                 pass
 
 
-def send_file(path):
-    start = time.time()
-    sent = 0
-    with open(path, "rb") as f:
-        while True:
-            if now["skip"]:
-                break
-            chunk = f.read(CHUNK)
-            if not chunk:
-                break
-            broadcast(chunk)
-            sent += len(chunk)
-            wait = start + sent / BPS - time.time()
-            if wait > 0:
-                time.sleep(wait)
+def playing_msg(title, uname):
+    t = T()
+    return (col(GREEN, t["playing_a"]) + " " + col(WHITE, title[:60]) +
+            col(GREEN, t["playing_b"]) + " " + col(BLUE, uname))
 
 
 def radio_loop():
     subprocess.run(
         ["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
-         "-t", "2", "-b:a", "128k", "-ar", "44100", "-ac", "2",
-         "-write_xing", "0", "/tmp/silence.mp3"],
-        capture_output=True)
+         "-t", "4", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+         "-write_xing", "0", "/tmp/silence.mp3"], capture_output=True)
+    SIL = open("/tmp/silence.mp3", "rb").read()
+    si = 0
+    next_t = time.time()
+
+    def pace(n):
+        nonlocal next_t
+        next_t += n / BPS
+        d = next_t - time.time()
+        if d > 0:
+            time.sleep(d)
+        elif d < -1:
+            next_t = time.time()
+
+    def sil_chunk():
+        nonlocal si
+        c = SIL[si:si + CHUNK]
+        si = (si + CHUNK) % (len(SIL) - CHUNK)
+        return c
+
     while True:
         with plock:
             item = playlist.pop(0) if playlist else None
-        if item:
-            path, title = item
-            now["title"] = title
-            now["skip"] = False
+        if not item:
+            c = sil_chunk()
+            broadcast(c)
+            pace(len(c))
+            continue
+        path, title, uid, uname = item
+        state.update(title=title, user_id=uid, username=uname,
+                     skip=False, restart=False, paused=False)
+        say(playing_msg(title, uname))
+        try:
+            buf = open(path, "rb").read()
+            pos = 0
+            next_t = time.time()
+            while pos < len(buf):
+                if state["skip"]:
+                    break
+                if state["restart"]:
+                    pos = 0
+                    state["restart"] = False
+                if state["paused"]:
+                    c = sil_chunk()
+                else:
+                    c = buf[pos:pos + CHUNK]
+                    pos += CHUNK
+                broadcast(c)
+                pace(len(c))
+        except Exception as e:
+            print("HATA calma", e, flush=True)
+        finally:
+            state.update(title=None, user_id=None, username=None,
+                         skip=False, paused=False)
             try:
-                send_file(path)
-            finally:
-                now["title"] = None
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
-        else:
-            send_file("/tmp/silence.mp3")
+                os.remove(path)
+            except OSError:
+                pass
+
+
+# ================= SARKI BULMA =================
+TR_MAP = str.maketrans("İıŞşĞğÜüÖöÇç", "IiSsGgUuOoCc")
+
+
+def _download(url):
+    opts = {
+        "format": "bestaudio/best",
+        "outtmpl": "/tmp/%(id)s.%(ext)s",
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "socket_timeout": 20,
+        "retries": 2,
+        "postprocessors": [{"key": "FFmpegExtractAudio",
+                            "preferredcodec": "mp3",
+                            "preferredquality": "128"}],
+        "postprocessor_args": {"ffmpeg": ["-ar", "44100", "-ac", "2"]},
+    }
+    with yt_dlp.YoutubeDL(opts) as y:
+        info = y.extract_info(url, download=True)
+        if "entries" in info:
+            info = info["entries"][0]
+        path = os.path.splitext(y.prepare_filename(info))[0] + ".mp3"
+    if not os.path.exists(path):
+        raise Exception("dosya olusmadi")
+    return path, info.get("title") or "Song"
 
 
 def indir(sorgu):
-    son_hata = None
-    for arama in ("scsearch1", "ytsearch1"):
-        opts = {
-            "format": "bestaudio/best",
-            "outtmpl": "/tmp/%(id)s.%(ext)s",
-            "default_search": arama,
-            "noplaylist": True,
-            "quiet": True,
-            "postprocessors": [{"key": "FFmpegExtractAudio",
-                                "preferredcodec": "mp3",
-                                "preferredquality": "128"}],
-            "postprocessor_args": {"ffmpeg": ["-ar", "44100", "-ac", "2"]},
-        }
-        try:
-            with yt_dlp.YoutubeDL(opts) as y:
-                info = y.extract_info(sorgu, download=True)
-            if "entries" in info:
-                info = info["entries"][0] if info["entries"] else None
-            if not info:
-                raise Exception("sonuc yok")
-            path = f"/tmp/{info['id']}.mp3"
-            if not os.path.exists(path):
-                raise Exception("dosya olusmadi")
-            return path, info["title"]
-        except Exception as e:
-            print("HATA", arama, e, flush=True)
-            son_hata = e
-    raise son_hata
-
-
-class Bot(BaseBot):
-    async def on_chat(self, user: User, message: str):
-        m = message.strip()
-        if m.startswith("!play "):
-            sorgu = m[6:].strip()
-            await self.highrise.chat(f"{sorgu} aranıyor.")
+    q0 = sorgu.strip()
+    variants = [q0]
+    ascii_q = q0.translate(TR_MAP)
+    if ascii_q != q0:
+        variants.append(ascii_q)
+    variants.append(q0 + " official audio")
+    variants.append(q0 + " lyrics")
+    last = None
+    for q in variants:
+        for prefix in ("scsearch6", "ytsearch6"):
             try:
-                path, title = await asyncio.to_thread(indir, sorgu)
+                with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True,
+                                       "extract_flat": True,
+                                       "socket_timeout": 20}) as y:
+                    res = y.extract_info(f"{prefix}:{q}", download=False)
+                entries = [e for e in (res.get("entries") or []) if e]
             except Exception as e:
-                print("HATA genel", e, flush=True)
-                await self.highrise.chat("Şarkı bulunamadı.")
+                print("HATA arama", prefix, q, e, flush=True)
+                last = e
+                continue
+            tried = 0
+            for e in entries:
+                dur = e.get("duration")
+                if dur and (dur > MAX_SEC or dur < MIN_SEC):
+                    continue
+                url = e.get("webpage_url") or e.get("url")
+                if not url:
+                    continue
+                tried += 1
+                if tried > 3:
+                    break
+                try:
+                    return _download(url)
+                except Exception as ex:
+                    print("HATA indir", prefix, url, ex, flush=True)
+                    last = ex
+    raise last or Exception("bulunamadi")
+
+
+# ================= BOT =================
+class Bot(BaseBot):
+    def __init__(self):
+        super().__init__()
+        self.id2name = {}
+        self.pending = set()
+
+    async def on_start(self, session_metadata):
+        BOT["inst"] = self
+        BOT["loop"] = asyncio.get_running_loop()
+        self.my_id = session_metadata.user_id
+        await self.refresh_users()
+        try:
+            await self.highrise.teleport(self.my_id, BOT_POS)
+        except Exception as e:
+            print("HATA teleport", e, flush=True)
+        asyncio.create_task(self.dance_loop())
+        asyncio.create_task(self.hint_loop())
+
+    async def refresh_users(self):
+        try:
+            room = await self.highrise.get_room_users()
+            for u, _ in room.content:
+                self.id2name[u.id] = u.username
+        except Exception as e:
+            print("HATA oda", e, flush=True)
+
+    async def on_user_join(self, user: User, position=None):
+        self.id2name[user.id] = user.username
+
+    async def dance_loop(self):
+        while True:
+            for em in random.sample(EMOTES, len(EMOTES)):
+                try:
+                    await self.highrise.send_emote(em)
+                except Exception:
+                    pass
+                await asyncio.sleep(random.randint(8, 12))
+
+    async def hint_loop(self):
+        while True:
+            await asyncio.sleep(HINT_EVERY)
+            try:
+                await self.highrise.chat(col(GREEN, T()["hint"]))
+            except Exception as e:
+                print("HATA ipucu", e, flush=True)
+
+    def user_has_song(self, uid):
+        if state["user_id"] == uid:
+            return True
+        with plock:
+            return any(x[2] == uid for x in playlist)
+
+    async def on_chat(self, user: User, message: str):
+        self.id2name[user.id] = user.username
+        m = message.strip()
+        t = T()
+        owner = is_owner(user.username)
+
+        if m.lower().startswith("!play "):
+            sorgu = m[6:].strip()
+            if not sorgu:
                 return
-            with plock:
-                playlist.append((path, title))
-                sira = len(playlist)
-            if now["title"] is None and sira == 1:
-                await self.highrise.chat(f"{title[:100]} şu an odada çalıyor.")
+            if not owner and (user.id in self.pending or self.user_has_song(user.id)):
+                await self.highrise.chat(col(RED, t["wait"]))
+                return
+            self.pending.add(user.id)
+            try:
+                await self.highrise.chat(
+                    t["search"] + " " + col(BLUE, sorgu[:60]) + " | " +
+                    col(WHITE, user.username) + " " +
+                    col(GREEN, "▰▰") + col(RED, "▱▱▱"))
+                try:
+                    path, title = await asyncio.to_thread(indir, sorgu)
+                except Exception as e:
+                    print("HATA genel", e, flush=True)
+                    await self.highrise.chat(
+                        col(RED, t["notfound"]) + " " + col(BLUE, user.username) + " ⚠️")
+                    return
+                with plock:
+                    playlist.append((path, title, user.id, user.username))
+                    ahead = len(playlist) - 1 + (1 if state["title"] else 0)
+                if ahead > 0:
+                    await self.highrise.chat(
+                        col(WHITE, title[:60]) + " " +
+                        col(YELLOW, t["added"].format(n=ahead)))
+            finally:
+                self.pending.discard(user.id)
+
+        elif m.startswith("!ضيف_مالك"):
+            if user.username.lower() != OWNER:
+                await self.highrise.chat(t["no_perm"])
+                return
+            parts = m.split()
+            if len(parts) < 2:
+                return
+            name = parts[1].lstrip("@").lower()
+            if name not in data["owners"]:
+                data["owners"].append(name)
+                await asyncio.to_thread(save_data)
+            await self.highrise.chat(t["owner_added"].format(u="@" + name))
+
+        elif m in ("!وقف", "!تشغيل", "!مسح", "!اعادة", "!إعادة", "!skip"):
+            if not owner:
+                await self.highrise.chat(t["no_perm"])
+                return
+            if m == "!وقف":
+                state["paused"] = True
+                await self.highrise.chat(t["paused"])
+            elif m == "!تشغيل":
+                state["paused"] = False
+                await self.highrise.chat(t["resumed"])
+            elif m in ("!مسح", "!skip"):
+                state["skip"] = True
+                await self.highrise.chat(t["deleted"])
             else:
-                await self.highrise.chat(f"{title[:100]} listeye eklendi. Sıra: {sira}")
-        elif m == "!skip":
-            now["skip"] = True
-            await self.highrise.chat("Şarkı geçildi.")
-        elif m == "!liste":
+                state["restart"] = True
+                state["paused"] = False
+                await self.highrise.chat(t["restarted"])
+
+        elif m in ("!liste", "!list", "!قائمة"):
             with plock:
-                t = [x[1][:40] for x in playlist]
-            cal = now["title"] or "Yok"
-            await self.highrise.chat(f"Çalan: {cal[:60]} | Sırada: {', '.join(t) if t else 'Boş'}")
+                nxt = [x[1][:30] for x in playlist]
+            cur = state["title"] or t["empty"]
+            await self.highrise.chat(
+                f"{t['now']}: {cur[:50]} | {t['next']}: "
+                f"{', '.join(nxt) if nxt else t['nothing']}")
+
+    async def on_message(self, user_id: str, conversation_id: str,
+                         is_new_conversation: bool):
+        try:
+            resp = await self.highrise.get_messages(conversation_id)
+            msgs = getattr(resp, "messages", None)
+            if not msgs:
+                return
+            text = (msgs[0].content or "").strip().lower()
+            if text not in ("ar", "tr", "en"):
+                return
+            if user_id not in self.id2name:
+                await self.refresh_users()
+            if not is_owner(self.id2name.get(user_id)):
+                return
+            data["lang"] = text
+            await asyncio.to_thread(save_data)
+            await self.highrise.send_message(conversation_id, L[text]["lang_set"])
+        except Exception as e:
+            print("HATA dm", e, flush=True)
 
 
+# ================= WEB (RADYO YAYINI) =================
 app = Flask(__name__)
 
 
@@ -137,8 +472,7 @@ def ok():
 @app.route("/stream", methods=["GET", "HEAD"])
 def stream():
     if request.method == "HEAD":
-        return Response(b"", mimetype="audio/mpeg",
-                        headers={"icy-name": "Radyo"})
+        return Response(b"", mimetype="audio/mpeg", headers={"icy-name": "Radyo"})
     q = queue.Queue(maxsize=300)
     with llock:
         listeners.append(q)
@@ -157,6 +491,7 @@ def stream():
 
 
 if __name__ == "__main__":
+    load_data()
     port = int(os.environ.get("PORT", 10000))
     threading.Thread(target=radio_loop, daemon=True).start()
     threading.Thread(
