@@ -21,8 +21,10 @@ JOIN_COOLDOWN = 60                                         # ayni kisi tekrar gi
 MAX_SEC = 720                                              # en uzun sarki (sn)
 MIN_SEC = 60                                               # 30 sn onizlemeleri atla
 DATA_FILE = os.environ.get("DATA_FILE", "/tmp/data.json")
-UPSTASH_URL = os.environ.get("UPSTASH_URL")                # opsiyonel kalici depo
-UPSTASH_TOKEN = os.environ.get("UPSTASH_TOKEN")
+UPSTASH_URL = os.environ.get("UPSTASH_URL") or os.environ.get("UPSTASH_REDIS_REST_URL")                # opsiyonel kalici depo
+UPSTASH_TOKEN = os.environ.get("UPSTASH_TOKEN") or os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+UPSTASH_URL = UPSTASH_URL.strip().strip('"').strip("'") if UPSTASH_URL else UPSTASH_URL
+UPSTASH_TOKEN = UPSTASH_TOKEN.strip().strip('"').strip("'") if UPSTASH_TOKEN else UPSTASH_TOKEN
 
 # Renkler (sohbette <#RRGGBB> etiketi)
 BLUE, WHITE, GREEN, RED, YELLOW = "3399FF", "FFFFFF", "00FF66", "FF3333", "FFD700"
