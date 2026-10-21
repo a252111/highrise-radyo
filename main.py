@@ -284,6 +284,60 @@ def score(e, qnorm, qwords):
     return sc
 
 
+def clean_title(t):
+    t = re.sub(r"[\(\[][^\)\]]*(official|video|lyric|audio|clip|klip|hd|4k|visualizer|music)[^\)\]]*[\)\]]",
+               " ", t or "", flags=re.I)
+    t = re.sub(r"\s*-\s*topic\b", " ", t, flags=re.I)
+    t = re.sub(r"\b(official|video|lyrics?|audio|klip|music video)\b", " ", t, flags=re.I)
+    return re.sub(r"\s+", " ", t).strip(" -|")
+
+
+def _http(url, timeout=12):
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36",
+        "Accept-Language": "en"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode("utf-8", "ignore")
+
+
+def resolve_query(sorgu):
+    """Link verilirse sarki adina cevirir. Link degilse aynen dondurur."""
+    import urllib.parse, html as _h
+    s = sorgu.strip()
+    if not re.match(r"https?://", s, re.I):
+        return s
+    try:
+        if re.search(r"(youtube\.com|youtu\.be)", s, re.I):
+            u = ("https://www.youtube.com/oembed?format=json&url=" +
+                 urllib.parse.quote(s, safe=""))
+            js = json.loads(_http(u))
+            title = clean_title(js.get("title"))
+            author = re.sub(r"\s*-\s*topic$", "", js.get("author_name") or "", flags=re.I)
+            if author and norm(author) not in norm(title):
+                title = (author + " " + title).strip()
+            print("LINK youtube ->", title, flush=True)
+            return title or None
+        if re.search(r"open\.spotify\.com/(intl-[a-z]+/)?track/", s, re.I):
+            page = _http(s.split("?")[0])
+            t = re.search(r'property="og:title"\s+content="([^"]+)"', page)
+            d = re.search(r'property="og:description"\s+content="([^"]+)"', page)
+            title = _h.unescape(t.group(1)) if t else ""
+            artist = ""
+            if d:
+                artist = _h.unescape(d.group(1)).split("·")[0].strip()
+            if not title:
+                js = json.loads(_http("https://open.spotify.com/oembed?url=" +
+                                      urllib.parse.quote(s, safe="")))
+                title = js.get("title") or ""
+            q = (artist + " " + title).strip()
+            print("LINK spotify ->", q, flush=True)
+            return q or None
+    except Exception as e:
+        print("HATA link", e, flush=True)
+        return None
+    return None
+
+
 def _search(prefix, q):
     with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True,
                            "extract_flat": True, "socket_timeout": 15,
@@ -439,8 +493,11 @@ def indir(sorgu):
             continue
         try:
             if e.get("_src") == "au":
-                return _download_audius(e["_url"], e.get("title"))
-            return _download(e["_url"])
+                r = _download_audius(e["_url"], e.get("title"))
+            else:
+                r = _download(e["_url"])
+            print("KAYNAK", e.get("_src") or e["_url"].split("/")[2], r[1][:50], flush=True)
+            return r
         except Exception as ex:
             msg = str(ex)
             print("HATA indir", e.get("_src") or "x", e["_url"][:80], msg[:150], flush=True)
@@ -518,6 +575,11 @@ class Bot(BaseBot):
                 return
             self.pending.add(user.id)
             try:
+                sorgu = await asyncio.to_thread(resolve_query, sorgu)
+                if not sorgu:
+                    await self.highrise.chat(
+                        col(RED, t["notfound"]) + " " + col(BLUE, user.username) + " ⚠️")
+                    return
                 await self.highrise.chat(
                     t["search"] + " " + col(BLUE, sorgu[:60]) + " | " +
                     col(WHITE, user.username) + " " +
