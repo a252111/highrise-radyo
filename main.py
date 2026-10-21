@@ -586,6 +586,14 @@ def indir(sorgu):
     raise last or Exception("bulunamadi")
 
 
+def is_dj_item(item_id):
+    """'cuffedjeans' icindeki 'dj' gibi tesaduflere takilmaz."""
+    i = item_id.lower()
+    if "headphone" in i or "headset" in i:
+        return True
+    return "dj" in re.split(r"[-_ ]", i)
+
+
 # Komutlar (tr / ar / en)
 PAUSE_C = {"-durdur", "-وقف", "-stop"}
 RESUME_C = {"-başlat", "-baslat", "-ابدا", "-never", "-start", "-resume"}
@@ -680,7 +688,7 @@ class Bot(BaseBot):
         try:
             inv = await self.highrise.get_inventory()
             for it in getattr(inv, "items", []) or []:
-                if any(k in it.id.lower() for k in DJ_KEYS):
+                if is_dj_item(it.id):
                     ids.append(it.id)
         except Exception as e:
             print("HATA envanter", e, flush=True)
