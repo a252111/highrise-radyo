@@ -3,12 +3,16 @@ import urllib.request
 import yt_dlp
 from flask import Flask, Response, request
 from highrise import BaseBot, User, Position
+try:
+    from highrise import AnchorPosition
+except Exception:
+    AnchorPosition = None
 from highrise.__main__ import main, BotDefinition
 
 # ================= AYARLAR =================
 OWNER = os.environ.get("OWNER_NAME", "RQTM").lower()      # bot sahibi
 DEFAULT_LANG = os.environ.get("DEFAULT_LANG", "ar")        # ar / tr / en
-BOT_POS = Position(0.0, 0.0, 0.0)                        # bot konumu
+DEFAULT_POS = (11.0, 7.0, 11.0)                            # !konum ile degistirilmediyse
 POS_FIRST_DELAY = 10                                       # odaya girince kac sn sonra gitsin
 POS_CHECK_EVERY = 60                                       # konum kontrolu (sn)
 POS_TOL = 1.0                                              # kabul edilen sapma
@@ -101,7 +105,7 @@ L = {
 }
 
 # ================= KALICI VERI =================
-data = {"lang": DEFAULT_LANG if DEFAULT_LANG in L else "ar", "owners": []}
+data = {"lang": DEFAULT_LANG if DEFAULT_LANG in L else "ar", "owners": [], "pos": None}
 dlock = threading.Lock()
 
 
@@ -146,6 +150,24 @@ def T():
 def is_owner(name):
     n = (name or "").lower().lstrip("@")
     return n == OWNER or n in data["owners"]
+
+
+def bot_pos():
+    p = data.get("pos") or DEFAULT_POS
+    return Position(float(p[0]), float(p[1]), float(p[2]))
+
+
+POSMSG = {
+    "tr": {"set": "Bot konumu ayarlandi: {x} {y} {z} ✅",
+           "sit": "Oturuyorsun, konum okunamadi. Ayakta dur ve tekrar yaz.",
+           "bad": "Kullanim: !konum  (ayakta durdugun yer) veya !konum x y z"},
+    "en": {"set": "Bot position set: {x} {y} {z} ✅",
+           "sit": "You are seated, position unreadable. Stand and try again.",
+           "bad": "Usage: !konum (where you stand) or !konum x y z"},
+    "ar": {"set": "تم تعيين موقع البوت: {x} {y} {z} ✅",
+           "sit": "أنت جالس، تعذر قراءة الموقع. قف وأعد المحاولة.",
+           "bad": "الاستخدام: !konum أو !konum x y z"},
+}
 
 
 # ================= RADYO =================
@@ -576,7 +598,7 @@ class Bot(BaseBot):
 
     async def go_home(self):
         try:
-            await self.highrise.teleport(self.my_id, BOT_POS)
+            await self.highrise.teleport(self.my_id, bot_pos())
             print("KONUM isinlandi", flush=True)
         except Exception as e:
             print("HATA teleport", e, flush=True)
@@ -593,10 +615,11 @@ class Bot(BaseBot):
                     if u.id == self.my_id:
                         me = p
                         break
+                tp = bot_pos()
                 ok = (isinstance(me, Position)
-                      and abs(me.x - BOT_POS.x) <= POS_TOL
-                      and abs(me.z - BOT_POS.z) <= POS_TOL
-                      and abs(me.y - BOT_POS.y) <= POS_TOL + 1)
+                      and abs(me.x - tp.x) <= POS_TOL
+                      and abs(me.z - tp.z) <= POS_TOL
+                      and abs(me.y - tp.y) <= POS_TOL + 1)
                 if not ok:
                     print("KONUM yanlis:", me, flush=True)
                     await self.go_home()
@@ -677,6 +700,34 @@ class Bot(BaseBot):
                         col(YELLOW, t["added"].format(n=ahead)))
             finally:
                 self.pending.discard(user.id)
+
+        elif m.lower().split()[0] in ("!konum", "!pos", "!موقع"):
+            if not owner:
+                await self.highrise.chat(t["no_perm"])
+                return
+            pm = POSMSG[data["lang"]]
+            parts = m.split()
+            try:
+                if len(parts) >= 4:
+                    x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
+                else:
+                    room = await self.highrise.get_room_users()
+                    p = None
+                    for u, pos in getattr(room, "content", []):
+                        if u.id == user.id:
+                            p = pos
+                            break
+                    if not isinstance(p, Position):
+                        await self.highrise.chat(pm["sit"])
+                        return
+                    x, y, z = p.x, p.y, p.z
+            except ValueError:
+                await self.highrise.chat(pm["bad"])
+                return
+            data["pos"] = [round(x, 2), round(y, 2), round(z, 2)]
+            await asyncio.to_thread(save_data)
+            await self.highrise.chat(pm["set"].format(x=data["pos"][0], y=data["pos"][1], z=data["pos"][2]))
+            await self.go_home()
 
         elif m.startswith("!ضيف_مالك"):
             if user.username.lower() != OWNER:
