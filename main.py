@@ -8,7 +8,7 @@ from highrise.__main__ import main, BotDefinition
 # ================= AYARLAR =================
 OWNER = os.environ.get("OWNER_NAME", "RQTM").lower()      # bot sahibi
 DEFAULT_LANG = os.environ.get("DEFAULT_LANG", "ar")        # ar / tr / en
-BOT_POS = Position(11.0, 7.0, 11.0)                        # bot konumu
+BOT_POS = Position(11.0, 0.0, 11.0)                        # bot konumu
 POS_FIRST_DELAY = 10                                       # odaya girince kac sn sonra gitsin
 POS_CHECK_EVERY = 60                                       # konum kontrolu (sn)
 POS_TOL = 1.0                                              # kabul edilen sapma
