@@ -7,6 +7,11 @@ try:
     from highrise import AnchorPosition
 except Exception:
     AnchorPosition = None
+try:
+    from highrise import Item
+except Exception:
+    Item = None
+from emotes import DANCE_DURATIONS
 from highrise.__main__ import main, BotDefinition
 
 # ================= AYARLAR =================
@@ -16,7 +21,9 @@ DEFAULT_POS = (11.0, 7.0, 11.0)                            # !konum ile degistir
 POS_FIRST_DELAY = 10                                       # odaya girince kac sn sonra gitsin
 POS_CHECK_EVERY = 60                                       # konum kontrolu (sn)
 POS_TOL = 1.0                                              # kabul edilen sapma
-HINT_EVERY = 60                                            # saniye
+JOIN_HINT_COOLDOWN = 5                                     # girislerde ipucu arasi min sn
+DJ_ITEMS = [x.strip() for x in os.environ.get("DJ_ITEMS", "").split(",") if x.strip()]
+DJ_KEYS = ("dj", "headphone", "headset")                   # envanterde aranacak kelimeler
 MAX_SEC = 720                                              # en uzun sarki (sn)
 MIN_SEC = 60                                               # 30 sn onizlemeleri atla
 DATA_FILE = os.environ.get("DATA_FILE", "/tmp/data.json")
@@ -31,14 +38,7 @@ def col(hexc, text):
     return f"<#{hexc}>{text}"
 
 
-# Dans listesi (calismayan olursa sessizce atlanir)
-EMOTES = [
-    "dance-macarena", "dance-tiktok8", "dance-tiktok9", "dance-tiktok10",
-    "dance-tiktok2", "dance-blackpink", "dance-pennywise", "dance-shoppingcart",
-    "dance-russian", "dance-weird", "dance-employee", "dance-breakdance",
-    "emote-gordonshuffle", "dance-icecream", "dance-wrong", "dance-touch",
-    "idle-dance-casual",
-]
+# Dans listesi: emotes.py (DANCE_DURATIONS)
 
 # ================= METINLER =================
 L = {
@@ -49,7 +49,7 @@ L = {
         "notfound": "الأغنية التي طلبتها غير متوفرة",
         "playing_a": "الأغنية التالية قيد التشغيل 🎶",
         "playing_b": "، مالك الأغنية",
-        "hint": "لتشغيل الأغنية التي تريدها، اكتب !play و اسم الأغنية. 🎵🎼",
+        "hint": "لتشغيل الأغنية التي تريدها، اكتب -p و اسم الأغنية. 🎵🎼",
         "owner_added": "تمت إضافة {u} كمالك للبوت ✅",
         "no_perm": "ليس لديك صلاحية ⛔",
         "paused": "تم إيقاف الأغنية ⏸",
@@ -61,6 +61,8 @@ L = {
         "now": "يعمل الآن",
         "next": "التالي",
         "nothing": "فارغ",
+        "cleared": "تم حذف كل الأغاني 🗑",
+        "dj": "تم تجهيز زي الـDJ 🎧",
     },
     "tr": {
         "search": "Şarkı aranıyor:",
@@ -69,7 +71,7 @@ L = {
         "notfound": "İstediğin şarkı bulunamadı",
         "playing_a": "Sıradaki şarkı çalıyor 🎶",
         "playing_b": ", şarkı sahibi:",
-        "hint": "İstediğin şarkıyı çalmak için !play yazıp şarkı adını yaz. 🎵🎼",
+        "hint": "İstediğin şarkıyı çalmak için -p yazıp şarkı adını yaz. 🎵🎼",
         "owner_added": "{u} bot sahibi yapıldı ✅",
         "no_perm": "Yetkin yok ⛔",
         "paused": "Şarkı durduruldu ⏸",
@@ -81,6 +83,8 @@ L = {
         "now": "Çalan",
         "next": "Sırada",
         "nothing": "Boş",
+        "cleared": "Tüm şarkılar silindi 🗑",
+        "dj": "DJ kıyafeti giyildi 🎧",
     },
     "en": {
         "search": "Searching for song:",
@@ -89,7 +93,7 @@ L = {
         "notfound": "The song you requested is not available",
         "playing_a": "Next song is now playing 🎶",
         "playing_b": ", song owner:",
-        "hint": "To play a song you want, type !play and the song name. 🎵🎼",
+        "hint": "To play a song you want, type -p and the song name. 🎵🎼",
         "owner_added": "{u} is now a bot owner ✅",
         "no_perm": "You don't have permission ⛔",
         "paused": "Song paused ⏸",
@@ -101,6 +105,8 @@ L = {
         "now": "Now",
         "next": "Next",
         "nothing": "Empty",
+        "cleared": "All songs deleted 🗑",
+        "dj": "DJ outfit applied 🎧",
     },
 }
 
@@ -580,6 +586,13 @@ def indir(sorgu):
     raise last or Exception("bulunamadi")
 
 
+# Komutlar (tr / ar / en)
+PAUSE_C = {"-durdur", "-وقف", "-stop"}
+RESUME_C = {"-başlat", "-baslat", "-ابدا", "-never", "-start", "-resume"}
+DELETE_C = {"-sil", "-احذف", "-delete"}
+RESTART_C = {"-tekrar", "-اعادة", "-إعادة", "-restart"}
+
+
 # ================= BOT =================
 class Bot(BaseBot):
     def __init__(self):
@@ -594,7 +607,8 @@ class Bot(BaseBot):
         await self.refresh_users()
         asyncio.create_task(self.position_loop())
         asyncio.create_task(self.dance_loop())
-        asyncio.create_task(self.hint_loop())
+        asyncio.create_task(self.wear_dj())
+        self.last_hint = 0.0
 
     async def go_home(self):
         try:
@@ -636,23 +650,111 @@ class Bot(BaseBot):
 
     async def on_user_join(self, user: User, position=None):
         self.id2name[user.id] = user.username
+        if user.id == getattr(self, "my_id", None):
+            return
+        now = time.time()
+        if now - self.last_hint < JOIN_HINT_COOLDOWN:
+            return
+        self.last_hint = now
+        try:
+            await self.highrise.chat(col(BLUE, "@" + user.username) + " " + col(GREEN, T()["hint"]))
+        except Exception as e:
+            print("HATA ipucu", e, flush=True)
 
     async def dance_loop(self):
+        names = list(DANCE_DURATIONS)
         while True:
-            for em in random.sample(EMOTES, len(EMOTES)):
+            for em in random.sample(names, len(names)):
                 try:
                     await self.highrise.send_emote(em)
+                    wait = DANCE_DURATIONS[em] + 0.3   # dansin gercek suresi kadar bekle
                 except Exception:
-                    pass
-                await asyncio.sleep(random.randint(8, 12))
+                    wait = 0.5                          # calismayan dansi hemen atla
+                await asyncio.sleep(wait)
 
-    async def hint_loop(self):
-        while True:
-            await asyncio.sleep(HINT_EVERY)
+    async def wear_dj(self):
+        await asyncio.sleep(3)
+        if Item is None:
+            return
+        ids = list(DJ_ITEMS) + list(data.get("dj_items", []))
+        try:
+            inv = await self.highrise.get_inventory()
+            for it in getattr(inv, "items", []) or []:
+                if any(k in it.id.lower() for k in DJ_KEYS):
+                    ids.append(it.id)
+        except Exception as e:
+            print("HATA envanter", e, flush=True)
+        cat = lambda i: i.split("-")[0]
+        chosen = {}
+        for i in ids:                       # kategori basina 1 esya
+            chosen.setdefault(cat(i), i)
+        if not chosen:
+            print("DJ esyasi bulunamadi (DJ_ITEMS ayarla)", flush=True)
+            return
+        try:
+            resp = await self.highrise.get_my_outfit()
+            cur = list(getattr(resp, "outfit", resp) or [])
+        except Exception as e:
+            print("HATA outfit oku", e, flush=True)
+            cur = []
+        keep = [x for x in cur if cat(x.id) not in chosen]
+        mk = lambda i: Item(type="clothing", amount=1, id=i,
+                            account_bound=False, active_palette=-1)
+        new = [mk(i) for i in chosen.values()]
+        try:
+            await self.highrise.set_outfit(outfit=keep + new)
+            print("DJ outfit giyildi", list(chosen.values()), flush=True)
+            return
+        except Exception as e:
+            print("HATA outfit toplu", e, flush=True)
+        for it in new:                      # gecersiz esyayi atla, digerlerini giy
             try:
-                await self.highrise.chat(col(GREEN, T()["hint"]))
+                await self.highrise.set_outfit(outfit=keep + [it])
+                keep.append(it)
             except Exception as e:
-                print("HATA ipucu", e, flush=True)
+                print("HATA esya atlandi", it.id, e, flush=True)
+
+    def delete_songs(self, uid, owner, arg):
+        """Sarki silme. Doner: 'deleted' / 'cleared' / None (yetki yok)."""
+        arg = (arg or "").strip().lower()
+        if owner:
+            if arg in ("all", "hepsi", "الكل"):
+                with plock:
+                    items = list(playlist)
+                    playlist.clear()
+                for x in items:
+                    try:
+                        os.remove(x[0])
+                    except OSError:
+                        pass
+                state["skip"] = True
+                return "cleared"
+            if state["title"]:
+                state["skip"] = True
+                return "deleted"
+            with plock:
+                x = playlist.pop(0) if playlist else None
+            if x:
+                try:
+                    os.remove(x[0])
+                except OSError:
+                    pass
+                return "deleted"
+            return "deleted"
+        # sarki sahibi: sadece kendi sarkisi
+        if state["user_id"] == uid:
+            state["skip"] = True
+            return "deleted"
+        with plock:
+            mine = [x for x in playlist if x[2] == uid]
+            for x in mine:
+                playlist.remove(x)
+        for x in mine:
+            try:
+                os.remove(x[0])
+            except OSError:
+                pass
+        return "deleted" if mine else None
 
     def user_has_song(self, uid):
         if state["user_id"] == uid:
@@ -666,8 +768,12 @@ class Bot(BaseBot):
         t = T()
         owner = is_owner(user.username)
 
-        if m.lower().startswith("!play "):
-            sorgu = m[6:].strip()
+        parts0 = m.split(None, 1)
+        cmd = parts0[0].lower() if parts0 else ""
+        arg = parts0[1].strip() if len(parts0) > 1 else ""
+
+        if cmd in ("-p", "-play"):
+            sorgu = arg
             if not sorgu:
                 return
             if not owner and (user.id in self.pending or self.user_has_song(user.id)):
@@ -701,7 +807,7 @@ class Bot(BaseBot):
             finally:
                 self.pending.discard(user.id)
 
-        elif m.lower().split()[0] in ("!konum", "!pos", "!موقع"):
+        elif cmd in ("!konum", "!pos", "!موقع"):
             if not owner:
                 await self.highrise.chat(t["no_perm"])
                 return
@@ -742,23 +848,39 @@ class Bot(BaseBot):
                 await asyncio.to_thread(save_data)
             await self.highrise.chat(t["owner_added"].format(u="@" + name))
 
-        elif m in ("!وقف", "!تشغيل", "!مسح", "!اعادة", "!إعادة", "!skip"):
+        elif cmd in PAUSE_C or cmd in RESUME_C or cmd in RESTART_C:
             if not owner:
                 await self.highrise.chat(t["no_perm"])
                 return
-            if m == "!وقف":
+            if cmd in PAUSE_C:
                 state["paused"] = True
                 await self.highrise.chat(t["paused"])
-            elif m == "!تشغيل":
+            elif cmd in RESUME_C:
                 state["paused"] = False
                 await self.highrise.chat(t["resumed"])
-            elif m in ("!مسح", "!skip"):
-                state["skip"] = True
-                await self.highrise.chat(t["deleted"])
             else:
                 state["restart"] = True
                 state["paused"] = False
                 await self.highrise.chat(t["restarted"])
+
+        elif cmd in DELETE_C:
+            res = self.delete_songs(user.id, owner, arg)
+            if res is None:
+                await self.highrise.chat(t["no_perm"])
+            else:
+                await self.highrise.chat(t[res])
+
+        elif cmd in ("-dj", "!dj"):
+            if not owner:
+                await self.highrise.chat(t["no_perm"])
+                return
+            if arg:                         # -dj item-id : listeye ekle (kalici)
+                ids = data.setdefault("dj_items", [])
+                if arg not in ids:
+                    ids.append(arg)
+                    await asyncio.to_thread(save_data)
+            await self.wear_dj()
+            await self.highrise.chat(t["dj"])
 
         elif m in ("!liste", "!list", "!قائمة"):
             with plock:
