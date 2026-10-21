@@ -249,6 +249,7 @@ BAD_WORDS = ("remix", "live", "cover", "karaoke", "slowed", "reverb",
              "playlist", "1 hour", "mix")
 YT_API_KEY = os.environ.get("YT_API_KEY")        # opsiyonel (sadece arama)
 YT_COOKIES = os.environ.get("YT_COOKIES")        # opsiyonel (cookies.txt icerigi)
+YT = {"blocked_at": 0.0}
 COOKIE_FILE = None
 if YT_COOKIES:
     try:
@@ -310,6 +311,51 @@ def _yt_api(q):
             for i in js.get("items", []) if i.get("id", {}).get("videoId")]
 
 
+def _dailymotion(q):
+    import urllib.parse
+    u = ("https://api.dailymotion.com/videos?fields=id,title,duration,owner.screenname"
+         "&limit=10&search=" + urllib.parse.quote(q))
+    with urllib.request.urlopen(u, timeout=12) as r:
+        js = json.loads(r.read().decode())
+    return [{"title": i.get("title"), "uploader": i.get("owner.screenname"),
+             "duration": i.get("duration"),
+             "_url": "https://www.dailymotion.com/video/" + i["id"], "_src": "dm"}
+            for i in js.get("list", []) if i.get("id")]
+
+
+def _audius(q):
+    import urllib.parse
+    u = ("https://api.audius.co/v1/tracks/search?app_name=highriseradyo&query="
+         + urllib.parse.quote(q))
+    with urllib.request.urlopen(u, timeout=12) as r:
+        js = json.loads(r.read().decode())
+    return [{"title": i.get("title"), "uploader": (i.get("user") or {}).get("name"),
+             "duration": i.get("duration"),
+             "_url": "https://api.audius.co/v1/tracks/%s/stream?app_name=highriseradyo" % i["id"],
+             "_src": "au"}
+            for i in js.get("data", []) if i.get("id")]
+
+
+def _download_audius(url, title):
+    raw = "/tmp/au_%d.raw" % int(time.time() * 1000)
+    out = raw + ".mp3"
+    with urllib.request.urlopen(url, timeout=30) as r, open(raw, "wb") as f:
+        while True:
+            b = r.read(65536)
+            if not b:
+                break
+            f.write(b)
+    p = subprocess.run(["ffmpeg", "-y", "-i", raw, "-vn", "-b:a", "128k",
+                        "-ar", "44100", "-ac", "2", out], capture_output=True)
+    try:
+        os.remove(raw)
+    except OSError:
+        pass
+    if p.returncode != 0 or not os.path.exists(out):
+        raise Exception("audius donusturulemedi")
+    return out, title or "Song"
+
+
 def _download(url):
     opts = {
         "format": "bestaudio[abr<=160]/bestaudio/best",
@@ -346,11 +392,14 @@ def indir(sorgu):
     qnorm = norm(q0)
     qwords = [w for w in qnorm.split() if len(w) > 1]
 
-    jobs = [(p, q) for q in variants for p in ("scsearch8", "ytsearch8")]
+    jobs = [(p, q) for q in variants for p in ("scsearch12", "ytsearch8")]
     cands = {}
     last = None
-    with ThreadPoolExecutor(max_workers=7) as ex:
+    with ThreadPoolExecutor(max_workers=10) as ex:
         futs = [ex.submit(_search, p, q) for p, q in jobs]
+        for qq in variants[:2]:
+            futs.append(ex.submit(_dailymotion, qq))
+            futs.append(ex.submit(_audius, qq))
         if YT_API_KEY:
             futs.append(ex.submit(_yt_api, q0))
         try:
@@ -374,12 +423,30 @@ def indir(sorgu):
     order = [e for _, e in ranked] or list(cands.values())
     print("ADAY", len(cands), "SECILEN", len(order), flush=True)
 
-    for e in order[:4]:
+    def is_yt(e):
+        return "youtube.com" in e["_url"] or "youtu.be" in e["_url"]
+
+    blocked = time.time() - YT["blocked_at"] < 600
+    non_yt = [e for e in order if not is_yt(e)][:8]
+    yt_list = [e for e in order if is_yt(e)][:2]
+    allow = set(id(e) for e in non_yt)
+    if not blocked:
+        allow |= set(id(e) for e in yt_list)
+    tries = [e for e in order if id(e) in allow]
+    print("DENENECEK", len(tries), "YT_ENGEL", blocked, flush=True)
+    for e in tries:
+        if is_yt(e) and time.time() - YT["blocked_at"] < 600:
+            continue
         try:
+            if e.get("_src") == "au":
+                return _download_audius(e["_url"], e.get("title"))
             return _download(e["_url"])
         except Exception as ex:
-            print("HATA indir", e["_url"], ex, flush=True)
+            msg = str(ex)
+            print("HATA indir", e.get("_src") or "x", e["_url"][:80], msg[:150], flush=True)
             last = ex
+            if "not a bot" in msg or "Sign in" in msg:
+                YT["blocked_at"] = time.time()
     raise last or Exception("bulunamadi")
 
 
