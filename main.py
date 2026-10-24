@@ -588,6 +588,8 @@ PAUSE_CMDS = ("-durdur", "-وقف", "-stop")
 RESUME_CMDS = ("-başlat", "-baslat", "-ابدا", "-never")
 DELETE_CMDS = ("-sil", "-احذف", "-delete")
 RESTART_CMDS = ("-tekrar", "-اعادة", "-إعادة", "-restart")
+COMPLAINT_ROOM_ID = "6ad3a44344cc8fb54d83de4d"
+COMPLAINT_CMDS = ("!شكوى", "-شكوى", "!sikayet", "-sikayet", "!complaint")
 POS_CMDS = ("-konum", "-pos", "-موقع")
 ADD_OWNER_CMDS = ("-ضيف_مالك",)
 LIST_CMDS = ("-liste", "-list", "-قائمة")
@@ -836,7 +838,9 @@ class Bot(BaseBot):
     async def handle_chat(self, user: User, message: str):
         self.id2name[user.id] = user.username
         m = (message or "").strip()
-        if not m.startswith("-"):
+        if m.startswith("!") and m[1:2].isspace():
+            m = "!" + m[1:].lstrip()   # "! شكوى" -> "!شكوى"
+        if not m.startswith(("-", "!")):
             return
         parts = m.split()
         cmd = parts[0].lower()
@@ -911,6 +915,14 @@ class Bot(BaseBot):
                 state["restart"] = True
                 state["paused"] = False
                 await self.highrise.chat(t["restarted"])
+
+        elif cmd in COMPLAINT_CMDS:
+            # komutu yazan herkes sabit odaya isinlanir
+            try:
+                await self.highrise.move_user_to_room(user.id, COMPLAINT_ROOM_ID)
+            except Exception as e:
+                print("HATA isinlama", repr(e), flush=True)
+                await self.highrise.chat("Isinlama basarisiz ⛔")
 
         elif cmd in LIST_CMDS:
             with plock:
