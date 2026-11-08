@@ -235,3 +235,294 @@ EMOTE_DURATIONS = {
 # DJ dans listesi: tum dance-* / idle-dance-* + birkac dansvari emote
 DJ_DANCES = [e for e in EMOTE_DURATIONS if e.startswith(("dance-", "idle-dance-"))]
 DJ_DANCES += [e for e in ['emote-gordonshuffle', 'emote-harlemshake', 'emote-gangnam', 'emote-disco', 'emote-tapdance', 'emote-robot'] if e in EMOTE_DURATIONS and e not in DJ_DANCES]
+
+
+# ===== Ekstra emote tablolari (isim / numara) =====
+_NAMES_RAW = """
+relaxed|idle_layingdown2
+attentive|idle_layingdown
+sleepy|idle-sleep
+poutyFace|idle-sad
+posh|idle-posh
+tiredloop|idle-loop-tired
+tapLoop|idle-loop-tapdance
+sit|idle-loop-sitfloor
+shy|idle-loop-shy
+bummed|idle-loop-sad
+chillin'|idle-loop-happy
+annoyed|idle-loop-annoyed
+aerobics|idle-loop-aerobics
+ponder|idle-lookup
+heropose|idle-hero
+cozynap|idle-floorsleeping
+enthused|idle-enthusiastic
+boogieswing|idle-dance-swinging
+feelthebeat|idle-dance-headbobbing
+irritated|idle-angry
+yes|emote-yes
+ibelieveIcanfly|emote-wings
+theWave|emote-wave
+tired|emote-tired
+think|emote-think
+theatrical|emote-theatrical
+tapdance|emote-tapdance
+superrun|emote-superrun
+superPunch|emote-superpunch
+sumofight|emote-sumo
+thumbSuck|emote-suckthumb
+splitsdrop|emote-splitsdrop
+snowballFight|emote-snowball
+snowAngel|emote-snowangel
+shyemote|emote-shy
+secrehandshake|emote-secrethandshake
+sad|emote-sad
+ropepull|emote-ropepull
+roll|emote-roll
+rofl|emote-rofl
+robot|emote-robot
+rainbow|emote-rainbow
+proposing|emote-proposing
+peekaboo|emote-peekaboo
+peace|emote-peace
+panic|emote-panic
+no|emote-no
+ninjarun|emote-ninjarun
+nightfever|emote-nightfever
+monsterfail|emote-monster_fail
+model|emote-model
+flirtywave|emote-lust
+levelUp|emote-levelup
+amused|emote-laughing2
+laugh|emote-laughing
+kiss|emote-kiss
+superKick|emote-kicking
+jump|emote-jumpb
+gravity|emote-gravity
+judochop|emote-judochop
+imaginaryjetpack|emote-jetpack
+hugyourself|emote-hugyourself
+sweating|emote-hot
+heroentrance|emote-hero
+hello|emote-hello
+headball|emote-headball
+harlemShake|emote-harlemshake
+happy|emote-happy
+handstand|emote-handstand
+greedyEmote|emote-greedy
+graceful|emote-graceful
+moonwalk|emote-gordonshuffle
+ghostfloat|emote-ghost-idle
+gangnamstyle|emote-gangnam
+frolic|emote-frollicking
+faint|emote-fainting
+clumsy|emote-fail2
+fall|emote-fail1
+facePalm|emote-exasperatedb
+exasperated|emote-exasperated
+elbowBump|emote-elbowbump
+disco|emote-disco
+blastOff|emote-disappear
+faintDrop|emote-deathdrop
+collapse|emote-death2
+revival|emote-death
+dab|emote-dab
+curtsy|emote-curtsy
+confusion|emote-confused
+cold|emote-cold
+charging|emote-charging
+bunnyHop|emote-bunnyhop
+bow|emote-bow
+boo|emote-boo
+homerun|emote-baseball
+fallingapart|emote-apart
+thumbsup|emoji-thumbsup
+point|emoji-there
+sneeze|emoji-sneeze
+smirk|emoji-smirking
+sick|emoji-sick
+gasp|emoji-scared
+punch|emoji-punch
+pray|emoji-pray
+stinky|emoji-poop
+naughty|emoji-naughty
+mindBlown|emoji-mind-blown
+lying|emoji-lying
+levitate|emoji-halo
+fireball Lunge|emoji-hadoken
+giveup|emoji-give-up
+tummy Ache|emoji-gagging
+flex|emoji-flex
+stunned|emoji-dizzy
+cursing Emote|emoji-cursing
+sob|emoji-crying
+clap|emoji-clapping
+raiseTheRoof|emoji-celebrate
+arrogance|emoji-arrogance
+angry|emoji-angry
+VogueHands|dance-voguehands
+SavageDance|dance-tiktok8
+DontStartNow|dance-tiktok2
+YogaFlow|dance-spiritual
+Smoothwalk|dance-smoothwalk
+RingonIt|dance-singleladies
+Let's Go Shopping|dance-shoppingcart
+russian Dance|dance-russian
+tobotic|dance-robotic
+penny's Dance|dance-pennywise
+orange Juice Dance|dance-orangejustice
+rockout|dance-metal
+karate|dance-martial-artist
+macarena|dance-macarena
+handsintheair|dance-handsup
+duckealk|dance-duckwalk
+Breakdance|dance-breakdance
+kpop|dance-blackpink
+PushUps|dance-aerobics
+Hyped|emote-hyped
+Jinglebell|dance-jinglebell
+Nervous|idle-nervous
+Toilet|idle-toilet
+Attention|emote-attention
+laidback|sit-open
+Astronaut|emote-astronaut
+DanceZombie|dance-zombie
+ghost|emoji-ghost
+HeartEyes|emote-hearteyes
+Swordfight|emote-swordfight
+TimeJump|emote-timejump
+Snake|emote-snake
+HeartFingers|emote-heartfingers
+Heart Shape|emote-heartshape
+hug|emote-hug
+Laugh|emote-lagughing
+Eyeroll|emoji-eyeroll
+Embarrassed|emote-embarrassed
+float|emote-float
+Telekinesis|emote-telekinesis
+Sexydance|dance-sexy
+Puppet|emote-puppet
+Fighter idle|idle-fighter
+Penguindance|dance-pinguin
+Creepypuppet|dance-creepypuppet
+Sleigh|emote-sleigh
+Maniac|emote-maniac
+EnergyBall|emote-energyball
+Singing|idle_singing
+Frog|emote-frog
+Superpose|emote-superpose
+Cute|emote-cute
+TikTok9|dance-tiktok9
+Weird|dance-weird
+TikTok10|dance-tiktok10
+pose7|emote-pose7
+pose8|emote-pose8
+casualDance|idle-dance-casual
+pose1|emote-pose1
+pose3|emote-pose3
+pose5|emote-pose5
+Cutey|emote-cutey
+PunkGuitar|emote-punkguitar
+zombieru|emote-zombierun
+fashionista|dance-jinglebell
+icecream|dance-icecream
+wrong|dance-wrong
+uwu|idle-uwu
+TikTok4|idle-dance-tiktok4
+advancedshy|emote-shy2
+anime|dance-anime
+kawaii|dance-kawai
+Scritchy|idle-wild
+iceskating|emote-iceskating
+surpriseBig|emote-pose6
+celebrationStep|emote-celebrationstep
+creepycute|emote-creepycute
+frustrated|emote-frustrated
+pose10|emote-pose10
+relaxedsit|sit-relaxed
+stargazing|emote-stargaze
+slap|emote-slap
+boxer|emote-boxer
+headBlowup|emote-headblowup
+kawaiiGoGo|emote-kawaiigogo
+repose|emote-repose
+tiktok7|idle-dance-tiktok7
+shrink|emote-shrink
+ditzyPose|emote-pose9
+teleporting|emote-teleporting
+touch|dance-touch
+airuitar|idle-guitar
+thisIs For You|emote-gift
+pushit|dance-employee
+sweetSmooch|emote-kissing
+tiktok11|dance-tiktok11
+cutesalute|emote-cutesalute
+relaxing|idle-floorsleeping2
+attention|emote-salute
+floss|dance-floss
+rest|sit-idle-cute
+aliceshrink|emote-alice-shrink
+threadexchangestar|emote-threadexchange-star
+insideout|emote-inside-out
+collabphoto|emote-collab-photo-right
+afk|emote-afk-idle
+meditate|emote-meditate-idle
+sixseven|emote-sixseven
+"""
+
+# numara -> emote id (1'den baslar)
+_NUMBERS_RAW = """
+idle_zombie idle_layingdown2 idle_layingdown idle-sleep idle-sad idle-posh idle-loop-tired idle-loop-tapdance
+idle-loop-sitfloor idle-loop-shy idle-loop-sad idle-loop-happy idle-loop-annoyed idle-loop-aerobics idle-lookup
+idle-hero idle-floorsleeping idle-enthusiastic idle-dance-swinging idle-dance-headbobbing idle-angry emote-yes
+emote-wings emote-wave emote-tired emote-think emote-theatrical emote-tapdance emote-superrun emote-superpunch
+emote-sumo emote-suckthumb emote-splitsdrop emote-snowball emote-snowangel emote-shy emote-secrethandshake emote-sad
+emote-ropepull emote-roll emote-rofl emote-robot emote-rainbow emote-proposing emote-peekaboo emote-peace emote-panic
+emote-no emote-ninjarun emote-nightfever emote-monster_fail emote-model emote-lust emote-levelup emote-laughing2
+emote-laughing emote-kiss emote-kicking emote-jumpb emote-gravity emote-judochop emote-jetpack emote-hugyourself
+emote-hot emote-hero emote-hello emote-headball emote-harlemshake emote-happy emote-handstand emote-greedy
+emote-graceful emote-gordonshuffle emote-ghost-idle emote-gangnam emote-frollicking emote-fainting emote-fail2
+emote-fail1 emote-exasperatedb emote-exasperated emote-elbowbump emote-disco emote-disappear emote-deathdrop
+emote-death2 emote-death emote-dab emote-curtsy emote-confused emote-cold emote-charging emote-bunnyhop emote-bow
+emote-boo emote-baseball emote-apart emoji-thumbsup emoji-there emoji-sneeze emoji-smirking emoji-sick emoji-scared
+emoji-punch emoji-pray emoji-poop emoji-naughty emoji-mind-blown emoji-lying emoji-halo emoji-hadoken emoji-give-up
+emoji-gagging emoji-flex emoji-dizzy emoji-cursing emoji-crying emoji-clapping emoji-celebrate emoji-arrogance
+emoji-angry dance-voguehands dance-tiktok8 dance-tiktok2 dance-spiritual dance-smoothwalk dance-singleladies
+dance-shoppingcart dance-russian dance-robotic dance-pennywise dance-orangejustice dance-metal dance-martial-artist
+dance-macarena dance-handsup dance-duckwalk dance-breakdance dance-blackpink dance-aerobics emote-hyped
+dance-jinglebell idle-nervous idle-toilet emote-attention sit-open emote-astronaut dance-zombie emoji-ghost
+emote-hearteyes emote-swordfight emote-timejump emote-snake emote-heartfingers emote-heartshape emote-hug
+emote-lagughing emoji-eyeroll emote-embarrassed emote-float emote-telekinesis dance-sexy emote-puppet idle-fighter
+dance-pinguin dance-creepypuppet emote-sleigh emote-maniac emote-energyball idle_singing emote-frog emote-superpose
+emote-cute dance-tiktok9 dance-weird dance-tiktok10 emote-pose7 emote-pose8 idle-dance-casual emote-pose1 emote-pose3
+emote-pose5 emote-cutey emote-punkguitar emote-zombierun dance-jinglebell emote-gravity dance-icecream dance-wrong
+idle-uwu idle-dance-tiktok4 emote-shy2 dance-anime dance-kawai idle-wild emote-iceskating emote-pose6
+emote-celebrationstep emote-creepycute emote-frustrated emote-pose10 sit-relaxed emote-stargaze emote-slap
+emote-boxer emote-headblowup emote-kawaiigogo emote-repose idle-dance-tiktok7 emote-shrink emote-pose9
+emote-teleporting dance-touch idle-guitar emote-gift dance-employee emote-kissing dance-tiktok11 emote-cutesalute
+emote-salute idle-floorsleeping2 dance-floss dance-tiktok11 dance-tiktok12 dance-tiktok13 emote-spiderman
+dance-breakdance dance-twerk idle-space sit-idle-cute dance-true-heart dance-griddy dance-ballet dance-freshprince
+emote-idle-daydreaming emote-graceful dance-spiritual dance-popularvibe sit-idle-laidBack dance-martial-artist
+dance-swagbounce emote-lust dance-woah dance-mine emote-blowkisses emote-hero dance-shuffle emote-knocking-screen
+emote-alice-shrink emote-threadexchange-star emote-inside-out emote-collab-photo-right emote-afk-idle
+emote-meditate-idle emote-sixseve-noimg emote-sixseven
+"""
+
+EMOTE_NAMES = {}
+for _l in _NAMES_RAW.strip().splitlines():
+    _k, _v = _l.split("|")
+    EMOTE_NAMES[_k] = _v
+EMOTE_NUMBERS = {str(i + 1): e for i, e in enumerate(_NUMBERS_RAW.split())}
+
+
+def _norm(s):
+    return s.lower().replace(" ", "").replace("'", "")
+
+
+# isim -> emote id (buyuk/kucuk harf, bosluk, kesme fark etmez; ayni isimde ilk gelen kazanir)
+EMOTE_LOOKUP = {}
+for _k, _v in EMOTE_NAMES.items():
+    EMOTE_LOOKUP.setdefault(_norm(_k), _v)
+
+# suresi bilinmeyen yeni emote'lara varsayilan sure (DJ_DANCES degismez)
+for _e in list(EMOTE_NUMBERS.values()) + list(EMOTE_NAMES.values()):
+    EMOTE_DURATIONS.setdefault(_e, 15.0)

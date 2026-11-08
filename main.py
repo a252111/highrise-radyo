@@ -8,10 +8,11 @@ try:
 except Exception:
     AnchorPosition = None
 from highrise.__main__ import main, BotDefinition
-from emotes import EMOTE_DURATIONS, DJ_DANCES
+from emotes import EMOTE_DURATIONS, DJ_DANCES, EMOTE_NUMBERS, EMOTE_LOOKUP, _norm
 
 # ================= AYARLAR =================
 OWNER = os.environ.get("OWNER_NAME", "RQTM").lower()      # bot sahibi
+BASE_OWNERS = {OWNER, "rqtm", "n.ua"}                      # sabit bot sahipleri
 DEFAULT_LANG = os.environ.get("DEFAULT_LANG", "ar")        # ar / tr / en
 DEFAULT_POS = (11.0, 7.0, 11.0)                            # -konum ile degistirilmediyse
 POS_FIRST_DELAY = 10                                       # odaya girince kac sn sonra gitsin
@@ -152,7 +153,7 @@ def T():
 
 def is_owner(name):
     n = (name or "").lower().lstrip("@")
-    return n == OWNER or n in data["owners"]
+    return n in BASE_OWNERS or n in data["owners"]
 
 
 def bot_pos():
@@ -595,6 +596,93 @@ ADD_OWNER_CMDS = ("-ضيف_مالك",)
 LIST_CMDS = ("-liste", "-list", "-قائمة")
 ALL_WORDS = ("hepsi", "all", "الكل")
 
+# ---- yeni ozellikler ----
+WELCOMES = [
+    "أهلاً وسهلاً بك يا {u} 🌹",
+    "مرحباً بك يا {u} نورت الروم ✨",
+    "يا هلا ومسهلا {u} 🌟",
+    "حياك الله يا {u} 💫",
+    "نورتنا يا {u} أهلاً بك بيننا 🌙",
+    "أهلين {u} منور المكان 🌺",
+    "السلام عليكم يا {u} حياك الله 🤍",
+    "منور يا {u} الروم صار أحلى بوجودك 🎶",
+]
+UP_CMDS = ("فوق",)
+DOWN_CMDS = ("تحت",)
+UP_POS = (14.5, 17.0, 7.01)
+DOWN_POS = (17.49, 6.0, 15.5)
+EMOTE_CHAT = True      # sohbette emote ismi/numarasi yazinca emote yapsin (kapatmak icin False)
+STOP_EMOTE_WORDS = ("dur", "stop")      # 0 ile birlikte emote dongusunu durdurur
+SLAP_EMOTE = EMOTE_LOOKUP["slap"]                                  # emote-slap
+FAINT_EMOTES = [EMOTE_LOOKUP[k] for k in ("faint", "faintdrop", "collapse")]
+SLAP_CMDS = ("كف",)
+BRING_CMDS = ("هات",)
+BACK_CMDS = ("روح",)
+HELP_WORDS = ("help", "yardim", "yardım", "مساعدة", "مساعده")
+
+HELP = {
+    "ar": {
+        "member": ("🎧 ميزات الأعضاء:\n"
+                   "-p اسم الأغنية : تشغيل أغنية\n"
+                   "-sil : حذف أغنيتك\n"
+                   "-liste : قائمة الأغاني\n"
+                   "فوق : الانتقال للأعلى\n"
+                   "تحت : الانتقال للأسفل\n"
+                   "!شكوى : الانتقال لغرفة الشكاوى\n"
+                   "اكتب رقم أو اسم إيموت (مثل 24 أو hello) للرقص باستمرار، و 0 للتوقف\n"
+                   "اكتب الأوامر في شات الروم."),
+        "owner": ("👑 ميزات المالك:\n"
+                  "كف @اسم : البوت يصفع الشخص فيُغمى عليه\n"
+                  "هات @اسم : يجلب الشخص إليك\n"
+                  "روح @اسم : يعيده لمكانه السابق\n"
+                  "-durdur / -baslat / -tekrar : إيقاف / تشغيل / إعادة\n"
+                  "-sil hepsi : حذف كل الأغاني\n"
+                  "-konum : تعيين مكان البوت\n"
+                  "-ضيف_مالك @اسم : إضافة مالك\n"
+                  "ar / tr / en في الخاص : تغيير اللغة"),
+    },
+    "tr": {
+        "member": ("🎧 Uye ozellikleri:\n"
+                   "-p sarki adi : sarki cal\n"
+                   "-sil : kendi sarkini sil\n"
+                   "-liste : sarki listesi\n"
+                   "فوق : ust noktaya isinlan\n"
+                   "تحت : alt noktaya isinlan\n"
+                   "!sikayet : sikayet odasina git\n"
+                   "Emote numarasi veya adi yaz (24, hello) -> surekli yapar, 0 -> durur\n"
+                   "Komutlari oda sohbetine yaz."),
+        "owner": ("👑 Sahip ozellikleri:\n"
+                  "كف @isim : bot kisiye saplak atar, kisi bayilir\n"
+                  "هات @isim : kisiyi yanina isinlar\n"
+                  "روح @isim : kisiyi eski yerine geri isinlar\n"
+                  "-durdur / -baslat / -tekrar : durdur / devam / basa sar\n"
+                  "-sil hepsi : tum sarkilari sil\n"
+                  "-konum : bot konumunu ayarla\n"
+                  "-ضيف_مالك @isim : sahip ekle\n"
+                  "DM'de ar / tr / en : dil degistir"),
+    },
+    "en": {
+        "member": ("🎧 Member features:\n"
+                   "-p song name : play a song\n"
+                   "-sil : delete your song\n"
+                   "-liste : song list\n"
+                   "فوق : teleport up\n"
+                   "تحت : teleport down\n"
+                   "!complaint : go to the complaint room\n"
+                   "Type an emote number or name (24, hello) to loop it, 0 to stop\n"
+                   "Type commands in the room chat."),
+        "owner": ("👑 Owner features:\n"
+                  "كف @name : bot slaps the person, they faint\n"
+                  "هات @name : bring the person to you\n"
+                  "روح @name : send them back to their old spot\n"
+                  "-durdur / -baslat / -tekrar : pause / resume / restart\n"
+                  "-sil hepsi : delete all songs\n"
+                  "-konum : set bot position\n"
+                  "-ضيف_مالك @name : add owner\n"
+                  "ar / tr / en in DM : change language"),
+    },
+}
+
 
 def is_err(res):
     """Highrise SDK hata dondururse (exception atmadan) yakala."""
@@ -607,6 +695,8 @@ class Bot(BaseBot):
         self.id2name = {}
         self.pending = set()
         self.last_greet = {}
+        self.prev_pos = {}   # هات ile alinan kisinin eski konumu
+        self.emote_tasks = {}   # kullanici id -> surekli emote gorevi
         self.my_id = None
         self.tasks = []
         self.restart_evt = asyncio.Event()   # True olursa supervisor botu yeniden baglar
@@ -616,6 +706,9 @@ class Bot(BaseBot):
         for t in self.tasks:
             t.cancel()
         self.tasks = []
+        for t in self.emote_tasks.values():
+            t.cancel()
+        self.emote_tasks = {}
 
     def spawn(self, coro):
         t = asyncio.create_task(coro)
@@ -710,7 +803,8 @@ class Bot(BaseBot):
             if now - self.last_greet.get(user.id, 0) < JOIN_COOLDOWN:
                 return
             self.last_greet[user.id] = now
-            msg = col(BLUE, "@" + user.username) + " " + col(GREEN, T()["hint"])
+            w = random.choice(WELCOMES).format(u="@" + user.username)
+            msg = col(BLUE, w) + " " + col(GREEN, T()["hint"])
             await self.highrise.chat(msg[:255])
         except Exception as e:
             print("HATA giris mesaji", e, flush=True)
@@ -840,6 +934,10 @@ class Bot(BaseBot):
         m = (message or "").strip()
         if m.startswith("!") and m[1:2].isspace():
             m = "!" + m[1:].lstrip()   # "! شكوى" -> "!شكوى"
+        if await self.arabic_cmds(user, m):
+            return
+        if EMOTE_CHAT and await self.emote_cmd(user, m):
+            return
         if not m.startswith(("-", "!")):
             return
         parts = m.split()
@@ -890,7 +988,7 @@ class Bot(BaseBot):
             await self.go_home()
 
         elif cmd in ADD_OWNER_CMDS:
-            if user.username.lower() != OWNER:
+            if user.username.lower().lstrip("@") not in BASE_OWNERS:
                 await self.highrise.chat(t["no_perm"])
                 return
             if len(parts) < 2:
@@ -932,6 +1030,114 @@ class Bot(BaseBot):
                 (f"{t['now']}: {cur[:50]} | {t['next']}: "
                  f"{', '.join(nxt) if nxt else t['nothing']}")[:255])
 
+    # ---------- oneksiz arapca komutlar ----------
+    async def find_user(self, name):
+        """Odadaki kullaniciyi isimle bul -> (User, pozisyon) ya da None."""
+        name = (name or "").lstrip("@").lower()
+        room = await self.highrise.get_room_users()
+        for u, pos in getattr(room, "content", []):
+            if u.username.lower() == name:
+                return u, pos
+        return None
+
+    def stop_user_emote(self, uid):
+        t = self.emote_tasks.pop(uid, None)
+        if t:
+            t.cancel()
+            return True
+        return False
+
+    async def emote_loop(self, uid, em):
+        """Emote bitince tekrar gonder: kisi durdurana kadar surekli yapar."""
+        fails = 0
+        try:
+            while True:
+                try:
+                    res = await self.highrise.send_emote(em, uid)
+                    bad = is_err(res)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    bad = True
+                if bad:
+                    fails += 1
+                    print("HATA emote", em, flush=True)
+                    if fails >= 2:      # kullanici odada degil / emote yok -> birak
+                        break
+                else:
+                    fails = 0
+                await asyncio.sleep(max(2.0, EMOTE_DURATIONS.get(em, 15.0) - 0.3))
+        finally:
+            if self.emote_tasks.get(uid) is asyncio.current_task():
+                self.emote_tasks.pop(uid, None)
+
+    async def emote_cmd(self, user, m):
+        """Emote ismi/numarasi -> surekli yapar. 0 veya dur -> durur."""
+        if len(m) > 25 or m.startswith(("-", "!")):
+            return False
+        if m == "0" or m.lower() in STOP_EMOTE_WORDS:
+            return self.stop_user_emote(user.id)
+        em = EMOTE_NUMBERS.get(m) if m.isdigit() else EMOTE_LOOKUP.get(_norm(m))
+        if not em:
+            return False
+        self.stop_user_emote(user.id)      # eskisini durdur, yenisini baslat
+        self.emote_tasks[user.id] = asyncio.create_task(self.emote_loop(user.id, em))
+        return True
+
+    async def on_user_leave(self, user: User):
+        self.stop_user_emote(user.id)
+
+    async def arabic_cmds(self, user, m):
+        parts = m.split()
+        if not parts:
+            return False
+        cmd = parts[0]
+        # herkes: فوق / تحت
+        if m in UP_CMDS or m in DOWN_CMDS:
+            x, y, z = UP_POS if m in UP_CMDS else DOWN_POS
+            try:
+                await self.highrise.teleport(user.id, Position(x, y, z))
+            except Exception as e:
+                print("HATA isinlama", repr(e), flush=True)
+            return True
+        # sadece sahip: كف / هات / روح  (@isim gerekli)
+        if cmd not in SLAP_CMDS + BRING_CMDS + BACK_CMDS or len(parts) < 2:
+            return False
+        if not is_owner(user.username):
+            await self.highrise.chat(T()["no_perm"])
+            return True
+        found = await self.find_user(parts[1])
+        if not found:
+            await self.highrise.chat("لم أجد " + parts[1] + " في الروم ⚠️")
+            return True
+        target, tpos = found
+        if cmd in SLAP_CMDS:
+            res = await self.highrise.send_emote(SLAP_EMOTE)
+            if is_err(res):
+                print("HATA saplak emote", res, flush=True)
+            await asyncio.sleep(1.2)
+            for em in FAINT_EMOTES:      # faint -> faintDrop -> collapse (hangisi calisirsa)
+                res = await self.highrise.send_emote(em, target.id)
+                if not is_err(res):
+                    break
+                print("HATA bayilma emote", em, res, flush=True)
+        elif cmd in BRING_CMDS:
+            me = await self.find_user(user.username)
+            if not me or not isinstance(me[1], Position):
+                await self.highrise.chat("قف في مكان ثم أعد المحاولة ⚠️")
+                return True
+            if isinstance(tpos, Position):
+                self.prev_pos[target.id] = (tpos.x, tpos.y, tpos.z)
+            p = me[1]
+            await self.highrise.teleport(target.id, Position(p.x, p.y, p.z))
+        else:  # روح
+            old = self.prev_pos.pop(target.id, None)
+            if not old:
+                await self.highrise.chat("لا يوجد مكان سابق محفوظ ⚠️")
+                return True
+            await self.highrise.teleport(target.id, Position(*old))
+        return True
+
     async def on_message(self, user_id: str, conversation_id: str,
                          is_new_conversation: bool):
         try:
@@ -940,6 +1146,14 @@ class Bot(BaseBot):
             if not msgs:
                 return
             text = (msgs[0].content or "").strip().lower()
+            if text in HELP_WORDS:
+                if user_id not in self.id2name:
+                    await self.refresh_users()
+                h = HELP[data["lang"]]
+                await self.highrise.send_message(conversation_id, h["member"])
+                if is_owner(self.id2name.get(user_id)):
+                    await self.highrise.send_message(conversation_id, h["owner"])
+                return
             if text not in ("ar", "tr", "en"):
                 return
             if user_id not in self.id2name:
