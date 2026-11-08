@@ -632,7 +632,7 @@ HELP = {
                    "اكتب رقم أو اسم إيموت (مثل 24 أو hello) للرقص باستمرار، و 0 للتوقف\n"
                    "اكتب الأوامر في شات الروم."),
         "owner": ("👑 ميزات المالك:\n"
-                  "كف @اسم : البوت يصفع الشخص فيُغمى عليه\n"
+                  "كف @اسم : تصفع الشخص فيُغمى عليه\n"
                   "هات @اسم : يجلب الشخص إليك\n"
                   "روح @اسم : يعيده لمكانه السابق\n"
                   "-durdur / -baslat / -tekrar : إيقاف / تشغيل / إعادة\n"
@@ -652,7 +652,7 @@ HELP = {
                    "Emote numarasi veya adi yaz (24, hello) -> surekli yapar, 0 -> durur\n"
                    "Komutlari oda sohbetine yaz."),
         "owner": ("👑 Sahip ozellikleri:\n"
-                  "كف @isim : bot kisiye saplak atar, kisi bayilir\n"
+                  "كف @isim : kisiye saplak atarsin, kisi bayilir\n"
                   "هات @isim : kisiyi yanina isinlar\n"
                   "روح @isim : kisiyi eski yerine geri isinlar\n"
                   "-durdur / -baslat / -tekrar : durdur / devam / basa sar\n"
@@ -672,7 +672,7 @@ HELP = {
                    "Type an emote number or name (24, hello) to loop it, 0 to stop\n"
                    "Type commands in the room chat."),
         "owner": ("👑 Owner features:\n"
-                  "كف @name : bot slaps the person, they faint\n"
+                  "كف @name : you slap the person, they faint\n"
                   "هات @name : bring the person to you\n"
                   "روح @name : send them back to their old spot\n"
                   "-durdur / -baslat / -tekrar : pause / resume / restart\n"
@@ -1112,7 +1112,9 @@ class Bot(BaseBot):
             return True
         target, tpos = found
         if cmd in SLAP_CMDS:
-            res = await self.highrise.send_emote(SLAP_EMOTE)
+            self.stop_user_emote(user.id)      # varsa surekli emote donguleri durur
+            self.stop_user_emote(target.id)
+            res = await self.highrise.send_emote(SLAP_EMOTE, user.id)   # saplagi komutu yazan atar
             if is_err(res):
                 print("HATA saplak emote", res, flush=True)
             await asyncio.sleep(1.2)
